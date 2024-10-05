@@ -1,0 +1,5 @@
+module.exports.registerUser = require('./registerUser.service')
+module.exports.login = require('./login.services')
+module.exports.verifyEmail = require('./verifyEmail.services.js')
+module.exports.resendVerifycationEmail = require('./resendVerifycationEmail.services.js')
+module.exports.getUserById = require('./getUser')
