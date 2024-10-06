@@ -87,21 +87,21 @@ app.use(errorConverter);
 // handle error
 app.use(errorHandler);
 const rooms = {};
-const array = [];
+let isTurnUpdated = false;
 const playingRoom = [];
 let totalCard = [7, 2, 3, 4, 5, 6, 10, 8, 9, 1, 11, 12, 13, 14, 19, 16, 17, 18, 15, 20, 21, 22, 23, 24];
 let alreadyDrawnCards = [];
 async function getRandomCards(totalCard, count) {
-    let drawnCards = [];
-    while (drawnCards.length < count) {
-        const randomIndex = Math.floor(Math.random() * totalCard.length);
-        const randomCard = totalCard[randomIndex];
-        if (!drawnCards.includes(randomCard) && !alreadyDrawnCards.includes(randomCard)) {
-            drawnCards.push(randomCard);
-            alreadyDrawnCards.push(randomCard);
-        }
-    }
-    return drawnCards;
+	let drawnCards = [];
+	while (drawnCards.length < count) {
+		const randomIndex = Math.floor(Math.random() * totalCard.length);
+		const randomCard = totalCard[randomIndex];
+		if (!drawnCards.includes(randomCard) && !alreadyDrawnCards.includes(randomCard)) {
+			drawnCards.push(randomCard);
+			alreadyDrawnCards.push(randomCard);
+		}
+	}
+	return drawnCards;
 }
 
 
@@ -125,14 +125,18 @@ io.on('connection', (socket) => {
 					console.log('plying')
 					playingRoom.push(findedRoom._id)
 					console.log('added playing room for check')
-					let updatedPlayers = await Promise.all(findedRoom.players.map(async (p) => {
+					let updatedPlayers = await Promise.all(findedRoom.players.map(async (p, index) => {
 						console.log(`Player ${p.userName} current cards:`, p.cards);
 						if (!p.cards || p.cards.length === 0) {
 							const card = await getRandomCards(totalCard, 5);
 							console.log('Cards drawn:', card);
 							totalCard = totalCard.filter(tc => !card.includes(tc));
 							console.log('Updated totalCard:', totalCard);
-							return { ...p, cards: card };
+							if (index == 0) {
+								return { ...p, cards: card, isTurn: true };
+							} else {
+								return { ...p, cards: card };
+							}
 						}
 						return p;
 					}));
@@ -155,9 +159,60 @@ io.on('connection', (socket) => {
 
 	})
 
-	socket.on('shuffleCards', async (e) => {
+	socket.on('gamPlayed', async (e) => {
 		try {
-			console.log('shufflecards')
+			const roomId = e.roomId;
+			if (roomId && isTurnUpdated == false) {
+				console.log('game played')
+				const findedRoom = await PlayingRoom.findOne({ _id: new mongoose.Types.ObjectId(roomId) });
+				if (findedRoom.players[0].isTurn == true) {
+					findedRoom.players[0].isTurn = false;
+					findedRoom.players[1].isTurn = true;
+					isTurnUpdated = true;
+					console.log('user 1 updated')
+
+				} else if (findedRoom.players[1].isTurn == true) {
+					findedRoom.players[1].isTurn = false;
+					findedRoom.players[2].isTurn = true;
+					isTurnUpdated = true;
+					console.log('user 2 updated')
+
+				} else if (findedRoom.players[2].isTurn == true) {
+					findedRoom.players[2].isTurn = false;
+					findedRoom.players[3].isTurn = true;
+					isTurnUpdated = true;
+					console.log('user 3 updated')
+
+
+				} else if (findedRoom.players[3].isTurn == true) {
+					findedRoom.players[3].isTurn = false;
+					findedRoom.players[0].isTurn = true;
+					isTurnUpdated = true;
+					console.log('user 4 updated')
+
+
+				}
+				console.log('here have updajte issue')
+				await findedRoom.save();
+				const updatedRoom = await PlayingRoom.findOneAndUpdate(
+					{ _id: new mongoose.Types.ObjectId(roomId) },  // Filter condition
+					{ players: findedRoom?.players },              // Update data
+					{ new: true }                                  // Options
+				);
+				console.log('updated', updatedRoom)
+				isTurnUpdated = false;
+				const clients = io.sockets.adapter.rooms.get(roomId);
+
+				if (clients) {
+					console.log('Clients in room:', [...clients]);  // Convert the Set to an array to log
+				} else {
+					console.log('No clients in the room');
+				}
+
+				io.to(roomId).emit('roomUpdates', { roomData: updatedRoom });
+				console.log('emited',)
+
+			}
 
 		} catch (error) {
 			console.error('Error in shuffleCards:', error);
