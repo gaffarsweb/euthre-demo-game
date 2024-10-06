@@ -7,7 +7,6 @@ const createRoomandUPdate = catchAsync(async (req, res) => {
 	let body = req?.body || {};
 
 	let result = await userService.createRoomandUPdate({ body })
-	console.log('result', result)
 	if (result?.status) {
 		sendResponse(res,
 			result?.code == 201 ? httpStatus.CREATED

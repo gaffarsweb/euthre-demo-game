@@ -6,6 +6,6 @@ const auth = require('../middlewares/auth');
 const authenticate = require('../middlewares/authonticate');
 const router = express.Router();
 
-router.route('/create-update').post(authenticate, createRoomandUpdate);
+router.route('/create-update').post( createRoomandUpdate);
 
 module.exports = router;

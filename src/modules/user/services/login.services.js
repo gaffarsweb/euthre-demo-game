@@ -61,11 +61,8 @@ const login = async ({ body }) => {
                         }
                         if (newResponse?.data?.user?.userId) {
                             body.descopeId = newResponse?.data?.user?.userId
-                            console.log('newrespose', body)
                         }
                         if (existtedUser?.isEmailVerified) {
-                            console.log('Email is verified:', existtedUser?.isEmailVerified);
-
                             // Call Descope's update method to verify the email
                             const loginId = existtedUser?.email
                             const updatedDescope = await descopeClient.management.user.update(
