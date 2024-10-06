@@ -162,23 +162,58 @@ io.on('connection', (socket) => {
 	socket.on('gamPlayed', async (e) => {
 		try {
 			const roomId = e.roomId;
+			const playedCard = e.card;
 			if (roomId && isTurnUpdated == false) {
 				console.log('game played')
 				const findedRoom = await PlayingRoom.findOne({ _id: new mongoose.Types.ObjectId(roomId) });
 				if (findedRoom.players[0].isTurn == true) {
 					findedRoom.players[0].isTurn = false;
+					const updatedCart = findedRoom.players[0].cards.map((c)=> {
+						if(c !== playedCard){
+							return c
+						}else{
+							return 0
+						}
+					});
+					console.log('updated cards', updatedCart)
+					findedRoom.players[0].cards = updatedCart;
+					findedRoom.playedCards ? findedRoom.playedCards.push(playedCard) : findedRoom.playedCards = [playedCard];
 					findedRoom.players[1].isTurn = true;
 					isTurnUpdated = true;
 					console.log('user 1 updated')
 
 				} else if (findedRoom.players[1].isTurn == true) {
 					findedRoom.players[1].isTurn = false;
+
+					const updatedCart = findedRoom.players[1].cards.map((c)=> {
+						if(c !== playedCard){
+							return c
+						}else{
+							return 0
+						}
+					});
+					console.log('updated cards', updatedCart)
+					findedRoom.players[1].cards = updatedCart;
+					findedRoom.playedCards ? findedRoom.playedCards.push(playedCard) : findedRoom.playedCards = [playedCard];
+
 					findedRoom.players[2].isTurn = true;
 					isTurnUpdated = true;
 					console.log('user 2 updated')
 
 				} else if (findedRoom.players[2].isTurn == true) {
 					findedRoom.players[2].isTurn = false;
+
+					const updatedCart = findedRoom.players[2].cards.map((c)=> {
+						if(c !== playedCard){
+							return c
+						}else{
+							return 0
+						}
+					});
+					console.log('updated cards', updatedCart)
+					findedRoom.players[2].cards = updatedCart;
+					findedRoom.playedCards ? findedRoom.playedCards.push(playedCard) : findedRoom.playedCards = [playedCard];
+
 					findedRoom.players[3].isTurn = true;
 					isTurnUpdated = true;
 					console.log('user 3 updated')
@@ -186,6 +221,18 @@ io.on('connection', (socket) => {
 
 				} else if (findedRoom.players[3].isTurn == true) {
 					findedRoom.players[3].isTurn = false;
+
+					const updatedCart = findedRoom.players[3].cards.map((c)=> {
+						if(c !== playedCard){
+							return c
+						}else{
+							return 0
+						}
+					});
+					console.log('updated cards', updatedCart)
+					findedRoom.players[3].cards = updatedCart;
+					findedRoom.playedCards ? findedRoom.playedCards.push(playedCard) : findedRoom.playedCards = [playedCard];
+
 					findedRoom.players[0].isTurn = true;
 					isTurnUpdated = true;
 					console.log('user 4 updated')
@@ -196,7 +243,7 @@ io.on('connection', (socket) => {
 				await findedRoom.save();
 				const updatedRoom = await PlayingRoom.findOneAndUpdate(
 					{ _id: new mongoose.Types.ObjectId(roomId) },  // Filter condition
-					{ players: findedRoom?.players },              // Update data
+					{ players: findedRoom.players },              // Update data
 					{ new: true }                                  // Options
 				);
 				console.log('updated', updatedRoom)
