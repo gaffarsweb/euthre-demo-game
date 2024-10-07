@@ -76,7 +76,9 @@ app.use(passport.session());
 passport.use('jwt', jwtStrategy);
 
 app.use('/v1', routes);
-app.use('/', 'server Started');
+app.use('/', (req, res) => {
+    res.send('Server Started');
+});
 
 app.use((req, res, next) => {
 	const error = new ApiError(httpStatus.NOT_FOUND, 'API Not Found');
