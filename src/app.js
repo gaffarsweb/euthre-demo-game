@@ -21,6 +21,7 @@ const server = http.createServer(app);
 const { Server } = require('socket.io');
 const PlayingRoom = require("./modules/playingroom/playingRoom.model");
 const { default: mongoose } = require("mongoose");
+const sendResponse = require("./utilities/responseHandler");
 const io = new Server(server, {
 	cors: {
 		origin: "*", // Change to your frontend URL for production
@@ -75,6 +76,7 @@ app.use(passport.session());
 passport.use('jwt', jwtStrategy);
 
 app.use('/v1', routes);
+app.use('/', 'server Started');
 
 app.use((req, res, next) => {
 	const error = new ApiError(httpStatus.NOT_FOUND, 'API Not Found');
