@@ -12,12 +12,16 @@ const playingroomSchema = new mongoose.Schema(
                     value: { type: String, default: '' },
                     cards: { type: Array, default: [] },
                     isTurn: { type: Boolean, default: false },
+                    isTrumpShow: { type: Boolean, default: false },
+                    isDealer: { type: Boolean, default: false },
                     points: { type: Number, default: 0 }
                 }
             ]
         },
         totalCards: { type: Array, default: ['9h','10h','jh','qh','kh','ah','9d','10d','jd','qd','kd','ad','9c','10c','jc','qc','kc','ac','9s','10s','js','qs','ks','as'] },
         playedCards: { type: Array, default: [] },
+        trumpSymbole: { type: String, default: '' },
+        isTrumpSelected: { type: Boolean, default: false },
         entryFee: {
             type: String,
             default: ''

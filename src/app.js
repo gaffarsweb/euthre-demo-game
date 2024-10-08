@@ -238,6 +238,53 @@ function parseTrumCard(trumb) {
 	};
 }
 
+const createDealer = async (players) => {
+    // Reset isTurn for all players
+    for (let i = 0; i < players.length; i++) {
+        players[i].isTurn = false;  // This ensures no player has `isTurn: true` initially
+    }
+
+    for (let i = 0; i < players.length; i++) {
+        if (players[i].isDealer) {
+            console.log('in dealer function', players);
+
+            // Reset current dealer
+            players[i].isDealer = false;
+
+            // Set the next dealer
+            let nextDealerIndex = (i + 1) % players.length;
+            players[nextDealerIndex].isDealer = true;
+
+            // Set isTurn to the player after the next dealer (2 positions ahead)
+            let nextTurnIndex = (i + 2) % players.length;
+            players[nextTurnIndex].isTurn = true;
+
+            break; // Exit once dealer and turn are assigned
+        }
+    }
+
+    return players; // Return updated players array
+};
+
+
+const passTrumpBox = async (players) => {
+	for (let i = 0; i < players.length; i++) {
+		if (players[i].isTrumpShow) {
+			// Reset the current dealer
+			players[i].isTrumpShow = false;
+
+			// Set the next dealer
+			let nextDealerIndex = (i + 1) % players.length;
+			players[nextDealerIndex].isTrumpShow = true;
+
+			break; // Exit the loop once the dealer is assigned
+		}
+	}
+
+	return players; // Return the updated players array
+}
+
+
 io.on('connection', (socket) => {
 	console.log('a user connected');
 
@@ -256,6 +303,7 @@ io.on('connection', (socket) => {
 					console.log('plying')
 					playingRoom.push(findedRoom._id)
 					console.log('added playing room for check')
+					findedRoom.players[0].isDealer = true;
 					let updatedPlayers = await Promise.all(findedRoom.players.map(async (p, index) => {
 						console.log(`Player ${p.userName} current cards:`, p.cards);
 						if (!p.cards || p.cards.length === 0) {
@@ -263,8 +311,8 @@ io.on('connection', (socket) => {
 							console.log('Cards drawn:', card);
 							totalCard = totalCard.filter(tc => !card.includes(tc));
 							console.log('Updated totalCard:', totalCard);
-							if (index == 0) {
-								return { ...p, cards: card, isTurn: true };
+							if (index == 1) {
+								return { ...p, cards: card, isTurn: true, isTrumpShow: true };
 							} else {
 								return { ...p, cards: card };
 							}
@@ -327,16 +375,20 @@ io.on('connection', (socket) => {
 						console.log('findedWinner', winner)
 
 						console.log('winnerUsername', winner);
-						findedRoom.players = findedRoom.players.map((player) => {
-							if (player.userName === winner) {
-								return {
-									...player,
-									points: (player.points || 0) + 1,
-									isTurn: true
-								};
-							}
-							return player;
-						});
+						findedRoom.players = await Promise.all(
+							findedRoom.players.map(async (player) => {
+								if (player.userName === winner) {
+									// Assuming some asynchronous operation might happen here (like saving to the database)
+									return {
+										...player,
+										points: (player.points || 0) + 1,
+										isTurn: true
+									};
+								}
+								return player;
+							})
+						);
+
 						findedRoom.playedCards = []
 						const playerCards = findedRoom.players.map((p) => {
 							console.log('pppppppppppppppppppppppppp', p.cards);
@@ -347,10 +399,14 @@ io.on('connection', (socket) => {
 							// Return true if all elements are 0, otherwise false
 							return allZero;
 						});
-						const allTrue = playerCards.every(c=>c === true) ? true : false;
+						const allTrue = playerCards.every(c => c === true) ? true : false;
 						console.log('playerCards', playerCards, 'asdf', allTrue)
 						if (findedRoom.playedCards.length == 0 && allTrue) {
 
+							const updatePlayersDeiler = await createDealer(findedRoom.players);
+							console.log('update deilers', updatePlayersDeiler)
+							findedRoom.players = updatePlayersDeiler;
+							console.log('findedRoom players updates', findedRoom.players)
 
 							let updatedPlayers = await Promise.all(findedRoom.players.map(async (p, index) => {
 								console.log(`Player ${p.userName} current cards:`, p.cards);
@@ -360,7 +416,7 @@ io.on('connection', (socket) => {
 									console.log('Cards drawn:', card);
 									totalCard = totalCard.filter(tc => !card.includes(tc));
 									console.log('Updated totalCard:', totalCard);
-									if (index == 0) {
+									if (index == 1) {
 										return { ...p, cards: card };
 									} else {
 										return { ...p, cards: card };
@@ -410,16 +466,20 @@ io.on('connection', (socket) => {
 						console.log('findedWinner', winner)
 
 						console.log('winnerUsername', winner);
-						findedRoom.players = findedRoom.players.map((player) => {
-							if (player.userName === winner) {
-								return {
-									...player,
-									points: (player.points || 0) + 1,
-									isTurn: true
-								};
-							}
-							return player;
-						});
+						findedRoom.players = await Promise.all(
+							findedRoom.players.map(async (player) => {
+								if (player.userName === winner) {
+									// Assuming some asynchronous operation might happen here (like saving to the database)
+									return {
+										...player,
+										points: (player.points || 0) + 1,
+										isTurn: true
+									};
+								}
+								return player;
+							})
+						);
+
 						findedRoom.playedCards = []
 						const playerCards = findedRoom.players.map((p) => {
 							console.log('pppppppppppppppppppppppppp', p.cards);
@@ -430,10 +490,14 @@ io.on('connection', (socket) => {
 							// Return true if all elements are 0, otherwise false
 							return allZero;
 						});
-						const allTrue = playerCards.every(c=>c === true) ? true : false;
+						const allTrue = playerCards.every(c => c === true) ? true : false;
 						console.log('playerCards', playerCards, 'asdf', allTrue)
 						if (findedRoom.playedCards.length == 0 && allTrue) {
 
+							const updatePlayersDeiler = await createDealer(findedRoom.players);
+							console.log('update deilers', updatePlayersDeiler)
+							findedRoom.players = updatePlayersDeiler;
+							console.log('findedRoom players updates', findedRoom.players)
 
 							let updatedPlayers = await Promise.all(findedRoom.players.map(async (p, index) => {
 								console.log(`Player ${p.userName} current cards:`, p.cards);
@@ -443,7 +507,7 @@ io.on('connection', (socket) => {
 									console.log('Cards drawn:', card);
 									totalCard = totalCard.filter(tc => !card.includes(tc));
 									console.log('Updated totalCard:', totalCard);
-									if (index == 0) {
+									if (index == 2) {
 										return { ...p, cards: card };
 									} else {
 										return { ...p, cards: card };
@@ -493,16 +557,20 @@ io.on('connection', (socket) => {
 						console.log('findedWinner', winner)
 
 						console.log('winnerUsername', winner);
-						findedRoom.players = findedRoom.players.map((player) => {
-							if (player.userName === winner) {
-								return {
-									...player,
-									points: (player.points || 0) + 1,
-									isTurn: true
-								};
-							}
-							return player;
-						});
+						findedRoom.players = await Promise.all(
+							findedRoom.players.map(async (player) => {
+								if (player.userName === winner) {
+									// Assuming some asynchronous operation might happen here (like saving to the database)
+									return {
+										...player,
+										points: (player.points || 0) + 1,
+										isTurn: true
+									};
+								}
+								return player;
+							})
+						);
+
 						findedRoom.playedCards = []
 						const playerCards = findedRoom.players.map((p) => {
 							console.log('pppppppppppppppppppppppppp', p.cards);
@@ -513,10 +581,14 @@ io.on('connection', (socket) => {
 							// Return true if all elements are 0, otherwise false
 							return allZero;
 						});
-						const allTrue = playerCards.every(c=>c === true) ? true : false;
+						const allTrue = playerCards.every(c => c === true) ? true : false;
 						console.log('playerCards', playerCards, 'asdf', allTrue)
 						if (findedRoom.playedCards.length == 0 && allTrue) {
 
+							const updatePlayersDeiler = await createDealer(findedRoom.players);
+							console.log('update deilers', updatePlayersDeiler)
+							findedRoom.players = updatePlayersDeiler;
+							console.log('findedRoom players updates', findedRoom.players)
 
 							let updatedPlayers = await Promise.all(findedRoom.players.map(async (p, index) => {
 								console.log(`Player ${p.userName} current cards:`, p.cards);
@@ -526,7 +598,7 @@ io.on('connection', (socket) => {
 									console.log('Cards drawn:', card);
 									totalCard = totalCard.filter(tc => !card.includes(tc));
 									console.log('Updated totalCard:', totalCard);
-									if (index == 0) {
+									if (index == 3) {
 										return { ...p, cards: card };
 									} else {
 										return { ...p, cards: card };
@@ -578,16 +650,20 @@ io.on('connection', (socket) => {
 						console.log('findedWinner', winner)
 
 						console.log('winnerUsername', winner);
-						findedRoom.players = findedRoom.players.map((player) => {
-							if (player.userName === winner) {
-								return {
-									...player,
-									points: (player.points || 0) + 1,
-									isTurn: true
-								};
-							}
-							return player;
-						});
+						findedRoom.players = await Promise.all(
+							findedRoom.players.map(async (player) => {
+								if (player.userName === winner) {
+									// Assuming some asynchronous operation might happen here (like saving to the database)
+									return {
+										...player,
+										points: (player.points || 0) + 1,
+										isTurn: true
+									};
+								}
+								return player;
+							})
+						);
+
 						findedRoom.playedCards = []
 						const playerCards = findedRoom.players.map((p) => {
 							console.log('pppppppppppppppppppppppppp', p.cards);
@@ -598,10 +674,14 @@ io.on('connection', (socket) => {
 							// Return true if all elements are 0, otherwise false
 							return allZero;
 						});
-						const allTrue = playerCards.every(c=>c === true) ? true : false;
+						const allTrue = playerCards.every(c => c === true) ? true : false;
 						console.log('playerCards', playerCards, 'asdf', allTrue)
 						if (findedRoom.playedCards.length == 0 && allTrue) {
 
+							const updatePlayersDeiler = await createDealer(findedRoom.players);
+							console.log('update deilers', updatePlayersDeiler)
+							findedRoom.players = updatePlayersDeiler;
+							console.log('findedRoom players updates', findedRoom.players)
 
 							let updatedPlayers = await Promise.all(findedRoom.players.map(async (p, index) => {
 								console.log(`Player ${p.userName} current cards:`, p.cards);
@@ -657,8 +737,8 @@ io.on('connection', (socket) => {
 					// Return true if all elements are 0, otherwise false
 					return allZero;
 				});
-				const allTrue = playerCards.every(c=>c === true) ? true : false;
-				if(allTrue){
+				const allTrue = playerCards.every(c => c === true) ? true : false;
+				if (allTrue) {
 					totalCard = ['9h', '10h', 'jh', 'qh', 'kh', 'ah', '9d', '10d', 'jd', 'qd', 'kd', 'ad', '9c', '10c', 'jc', 'qc', 'kc', 'ac', '9s', '10s', 'js', 'qs', 'ks', 'as'];
 				}
 
@@ -669,6 +749,36 @@ io.on('connection', (socket) => {
 		}
 	});
 
+	socket.on('passTrumpBox', async (e) => {
+		const roomId = e.roomId;
+
+		if (roomId) {
+			let findedRoom = await PlayingRoom.findOne({ _id: new mongoose.Types.ObjectId(roomId) });
+			const updatedPlayers = await passTrumpBox(findedRoom.players);
+			findedRoom.players = updatedPlayers;
+
+			const updatedRoom = await PlayingRoom.findOneAndUpdate(
+				{ _id: new mongoose.Types.ObjectId(roomId) },  // Filter condition
+				{ players: findedRoom.players },              // Update data
+				{ new: true }                                  // Options
+			);
+			console.log('updated', updatedRoom);
+
+
+
+			const clients = io.sockets.adapter.rooms.get(roomId);
+
+			if (clients) {
+				console.log('Clients in room:', [...clients]);  // Convert the Set to an array to log
+			} else {
+				console.log('No clients in the room');
+			}
+
+			io.to(roomId).emit('roomUpdates', { roomData: updatedRoom });
+			console.log('emited',)
+		}
+
+	})
 
 
 
