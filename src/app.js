@@ -355,6 +355,7 @@ io.on('connection', (socket) => {
 							let updatedPlayers = await Promise.all(findedRoom.players.map(async (p, index) => {
 								console.log(`Player ${p.userName} current cards:`, p.cards);
 								if ((!p.cards || p.cards.length === 0) || allTrue) {
+									totalCard = ['9h', '10h', 'jh', 'qh', 'kh', 'ah', '9d', '10d', 'jd', 'qd', 'kd', 'ad', '9c', '10c', 'jc', 'qc', 'kc', 'ac', '9s', '10s', 'js', 'qs', 'ks', 'as'];
 									const card = await getRandomCards(totalCard, 5);
 									console.log('Cards drawn:', card);
 									totalCard = totalCard.filter(tc => !card.includes(tc));
@@ -369,7 +370,8 @@ io.on('connection', (socket) => {
 							}));
 
 							// Update the total cards after player cards have been dealt
-							findedRoom.status = 'playing'
+							findedRoom.status = 'playing';
+							alreadyDrawnCards = [];
 							findedRoom.totalCards = totalCard;
 							findedRoom.players = updatedPlayers;
 						}
@@ -436,6 +438,7 @@ io.on('connection', (socket) => {
 							let updatedPlayers = await Promise.all(findedRoom.players.map(async (p, index) => {
 								console.log(`Player ${p.userName} current cards:`, p.cards);
 								if ((!p.cards || p.cards.length === 0) || allTrue) {
+									totalCard = ['9h', '10h', 'jh', 'qh', 'kh', 'ah', '9d', '10d', 'jd', 'qd', 'kd', 'ad', '9c', '10c', 'jc', 'qc', 'kc', 'ac', '9s', '10s', 'js', 'qs', 'ks', 'as'];
 									const card = await getRandomCards(totalCard, 5);
 									console.log('Cards drawn:', card);
 									totalCard = totalCard.filter(tc => !card.includes(tc));
@@ -450,7 +453,8 @@ io.on('connection', (socket) => {
 							}));
 
 							// Update the total cards after player cards have been dealt
-							findedRoom.status = 'playing'
+							findedRoom.status = 'playing';
+							alreadyDrawnCards = [];
 							findedRoom.totalCards = totalCard;
 							findedRoom.players = updatedPlayers;
 						}
@@ -517,6 +521,7 @@ io.on('connection', (socket) => {
 							let updatedPlayers = await Promise.all(findedRoom.players.map(async (p, index) => {
 								console.log(`Player ${p.userName} current cards:`, p.cards);
 								if ((!p.cards || p.cards.length === 0) || allTrue) {
+									totalCard = ['9h', '10h', 'jh', 'qh', 'kh', 'ah', '9d', '10d', 'jd', 'qd', 'kd', 'ad', '9c', '10c', 'jc', 'qc', 'kc', 'ac', '9s', '10s', 'js', 'qs', 'ks', 'as'];
 									const card = await getRandomCards(totalCard, 5);
 									console.log('Cards drawn:', card);
 									totalCard = totalCard.filter(tc => !card.includes(tc));
@@ -531,7 +536,8 @@ io.on('connection', (socket) => {
 							}));
 
 							// Update the total cards after player cards have been dealt
-							findedRoom.status = 'playing'
+							findedRoom.status = 'playing';
+							alreadyDrawnCards = [];
 							findedRoom.totalCards = totalCard;
 							findedRoom.players = updatedPlayers;
 						}
@@ -600,6 +606,7 @@ io.on('connection', (socket) => {
 							let updatedPlayers = await Promise.all(findedRoom.players.map(async (p, index) => {
 								console.log(`Player ${p.userName} current cards:`, p.cards);
 								if ((!p.cards || p.cards.length === 0) || allTrue) {
+									totalCard = ['9h', '10h', 'jh', 'qh', 'kh', 'ah', '9d', '10d', 'jd', 'qd', 'kd', 'ad', '9c', '10c', 'jc', 'qc', 'kc', 'ac', '9s', '10s', 'js', 'qs', 'ks', 'as'];
 									const card = await getRandomCards(totalCard, 5);
 									console.log('Cards drawn:', card);
 									totalCard = totalCard.filter(tc => !card.includes(tc));
@@ -614,7 +621,8 @@ io.on('connection', (socket) => {
 							}));
 
 							// Update the total cards after player cards have been dealt
-							findedRoom.status = 'playing'
+							findedRoom.status = 'playing';
+							alreadyDrawnCards = [];
 							findedRoom.totalCards = totalCard;
 							findedRoom.players = updatedPlayers;
 						}
