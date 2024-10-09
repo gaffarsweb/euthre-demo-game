@@ -22,6 +22,8 @@ const playingroomSchema = new mongoose.Schema(
         playedCards: { type: Array, default: [] },
         trumpSymbole: { type: String, default: '' },
         isTrumpSelected: { type: Boolean, default: false },
+        trumpRound: { type: Number, default: 0 },
+        isStarted: { type: Boolean, default: false },
         entryFee: {
             type: String,
             default: ''

@@ -238,10 +238,38 @@ function parseTrumCard(trumb) {
 	};
 }
 
+const reciveTrumpSelectedCard = (players, selectedCard)=>{
+
+	for (let i = 0; i < players.length; i++) {
+
+		if(players[i].isDealer){
+			console.log('dealer card geted')
+			players[i].cards.push(selectedCard)
+
+			break;
+		}
+    }
+	return players;
+}
+const removedCard = (players, removedCard)=>{
+
+	for (let i = 0; i < players.length; i++) {
+
+		if(players[i].cards.length > 5){
+			console.log('card greater then 5', removedCard);
+            players[i].cards = players[i].cards.filter(e => e !== removedCard);
+
+			break;
+		}
+    }
+	return players;
+}
+
 const createDealer = async (players) => {
     // Reset isTurn for all players
     for (let i = 0; i < players.length; i++) {
         players[i].isTurn = false;  // This ensures no player has `isTurn: true` initially
+        players[i].isTrumpShow = false;  // This ensures no player has `isTurn: true` initially
     }
 
     for (let i = 0; i < players.length; i++) {
@@ -258,6 +286,7 @@ const createDealer = async (players) => {
             // Set isTurn to the player after the next dealer (2 positions ahead)
             let nextTurnIndex = (i + 2) % players.length;
             players[nextTurnIndex].isTurn = true;
+            players[nextTurnIndex].isTrumpShow = true;
 
             break; // Exit once dealer and turn are assigned
         }
@@ -267,9 +296,14 @@ const createDealer = async (players) => {
 };
 
 
-const passTrumpBox = async (players) => {
+const passTrumpBox = async (players, count) => {
+	let trumpRound = count;
 	for (let i = 0; i < players.length; i++) {
 		if (players[i].isTrumpShow) {
+			console.log('is trump show ')
+			if(players[i].isDealer){
+				trumpRound = count + 1
+			}
 			// Reset the current dealer
 			players[i].isTrumpShow = false;
 
@@ -281,7 +315,7 @@ const passTrumpBox = async (players) => {
 		}
 	}
 
-	return players; // Return the updated players array
+	return {players, trumpRound}; // Return the updated players array
 }
 
 
@@ -301,6 +335,7 @@ io.on('connection', (socket) => {
 			if (findedRoom) {
 				if (findedRoom.status == 'shuffling' && !playingRoom.includes(findedRoom._id)) {
 					console.log('plying')
+					//hash table
 					playingRoom.push(findedRoom._id)
 					console.log('added playing room for check')
 					findedRoom.players[0].isDealer = true;
@@ -369,7 +404,7 @@ io.on('connection', (socket) => {
 						const parsedCards = await parseCards(findedRoom.playedCards);
 						console.log('parsedCards', parsedCards)
 
-						const trumpSuit = await parseTrumCard(findedRoom.totalCards[0])
+						const trumpSuit =  parseTrumCard(findedRoom.totalCards[0])
 						console.log('trumpSuid ', trumpSuit)
 						const winner = findTrickWinner(parsedCards, trumpSuit.suit);
 						console.log('findedWinner', winner)
@@ -754,12 +789,41 @@ io.on('connection', (socket) => {
 
 		if (roomId) {
 			let findedRoom = await PlayingRoom.findOne({ _id: new mongoose.Types.ObjectId(roomId) });
-			const updatedPlayers = await passTrumpBox(findedRoom.players);
-			findedRoom.players = updatedPlayers;
+			let {players, trumpRound} = await passTrumpBox(findedRoom.players, findedRoom.trumpRound);
+			console.log('updated players, and trum round', players )
+			console.log('updated players, and trum round', trumpRound )
+			findedRoom.players = players;
+			if(trumpRound == 2){
+				trumpRound = 0
+				const updatePlayersDeiler = await createDealer(findedRoom.players);
+				console.log('update deilers', updatePlayersDeiler)
+				findedRoom.players = updatePlayersDeiler;
+				console.log('findedRoom players updates', findedRoom.players)
+
+				let updatedPlayers = await Promise.all(findedRoom.players.map(async (p, index) => {
+					console.log(`Player ${p.userName} current cards:`, p.cards);
+						totalCard = ['9h', '10h', 'jh', 'qh', 'kh', 'ah', '9d', '10d', 'jd', 'qd', 'kd', 'ad', '9c', '10c', 'jc', 'qc', 'kc', 'ac', '9s', '10s', 'js', 'qs', 'ks', 'as'];
+						const card = await getRandomCards(totalCard, 5);
+						console.log('Cards drawn:', card);
+						totalCard = totalCard.filter(tc => !card.includes(tc));
+						console.log('Updated totalCard:', totalCard);
+						if (index == 1) {
+							return { ...p, cards: card };
+						} else {
+							return { ...p, cards: card };
+						}
+				}));
+
+				// Update the total cards after player cards have been dealt
+				findedRoom.status = 'playing';
+				alreadyDrawnCards = [];
+				findedRoom.totalCards = totalCard;
+				findedRoom.players = updatedPlayers;
+			}
 
 			const updatedRoom = await PlayingRoom.findOneAndUpdate(
 				{ _id: new mongoose.Types.ObjectId(roomId) },  // Filter condition
-				{ players: findedRoom.players },              // Update data
+				{ players: findedRoom.players , trumpRound: trumpRound, totalCards:findedRoom.totalCards },              // Update data
 				{ new: true }                                  // Options
 			);
 			console.log('updated', updatedRoom);
@@ -779,7 +843,94 @@ io.on('connection', (socket) => {
 		}
 
 	})
+	socket.on('TrumpCardLogoSelected', async (e) => {
+		const roomId = e.roomId;
+		const selectedCard = e.card;
 
+		if (roomId) {
+			const updatedRoom = await PlayingRoom.findOneAndUpdate(
+				{ _id: new mongoose.Types.ObjectId(roomId) },  // Filter condition
+				{ trumpSymbole : selectedCard, isTrumpSelected:true, trumpRound:0, isStarted : true },              // Update data
+				{ new: true }                                  // Options
+			);
+			console.log('updated', updatedRoom);
+
+
+
+			const clients = io.sockets.adapter.rooms.get(roomId);
+
+			if (clients) {
+				console.log('Clients in room:', [...clients]);  // Convert the Set to an array to log
+			} else {
+				console.log('No clients in the room');
+			}
+
+			io.to(roomId).emit('roomUpdates', { roomData: updatedRoom });
+			console.log('emited',)
+		}
+
+	})
+	socket.on('TrumpSelected', async (e) => {
+		const roomId = e.roomId;
+		const selectedCard = e.selectedCard;
+		let findedRoom = await PlayingRoom.findOne({ _id: new mongoose.Types.ObjectId(roomId) });
+			const updatedPlayers = await reciveTrumpSelectedCard(findedRoom.players, selectedCard);
+			findedRoom.players = updatedPlayers;
+
+		if (roomId) {
+			const updatedRoom = await PlayingRoom.findOneAndUpdate(
+				{ _id: new mongoose.Types.ObjectId(roomId) },  // Filter condition
+				{ trumpSymbole : selectedCard, isTrumpSelected:true, players : findedRoom.players, trumpRound : 0  },              // Update data
+				{ new: true }                                  // Options
+			);
+			console.log('updated', updatedRoom);
+
+
+
+			const clients = io.sockets.adapter.rooms.get(roomId);
+
+			if (clients) {
+				console.log('Clients in room:', [...clients]);  // Convert the Set to an array to log
+			} else {
+				console.log('No clients in the room');
+			}
+
+			io.to(roomId).emit('roomUpdates', { roomData: updatedRoom });
+			console.log('emited',)
+		}
+
+	})
+	socket.on('removeExtraCard', async (e)=>{
+		const roomId = e.roomId;
+		const removedCardSelected= e.card;
+		let findedRoom = await PlayingRoom.findOne({ _id: new mongoose.Types.ObjectId(roomId) });
+			const updatedPlayers = await removedCard(findedRoom.players, removedCardSelected);
+			console.log('removed Card', updatedPlayers)
+			findedRoom.players = updatedPlayers;
+
+
+			if (roomId) {
+				const updatedRoom = await PlayingRoom.findOneAndUpdate(
+					{ _id: new mongoose.Types.ObjectId(roomId) },  // Filter condition
+					{  players : findedRoom.players , isStarted : true },              // Update data
+					{ new: true }                                  // Options
+				);
+				console.log('updated', updatedRoom);
+	
+	
+	
+				const clients = io.sockets.adapter.rooms.get(roomId);
+	
+				if (clients) {
+					console.log('Clients in room:', [...clients]);  // Convert the Set to an array to log
+				} else {
+					console.log('No clients in the room');
+				}
+	
+				io.to(roomId).emit('roomUpdates', { roomData: updatedRoom });
+				console.log('emited',)
+			}
+	})
 
 
 });
