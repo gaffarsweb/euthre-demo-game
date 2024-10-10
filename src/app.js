@@ -432,12 +432,14 @@ io.on('connection', (socket) => {
 						const winner = findTrickWinner(parsedCards, trumpSuit.suit);
 						findedRoom.players = await Promise.all(
 							findedRoom.players.map(async (player) => {
+								player.isTrumpShow = false;
 								if (player.userName === winner) {
 									// Assuming some asynchronous operation might happen here (like saving to the database)
 									return {
 										...player,
 										points: (player.points || 0) + 1,
-										isTurn: true
+										isTurn: true,
+										isTrumpShow: true
 									};
 								}
 								return player;
@@ -474,6 +476,8 @@ io.on('connection', (socket) => {
 							}));
 
 							// Update the total cards after player cards have been dealt
+							findedRoom.isTrumpSelected = false;
+							findedRoom.isStarted = false;
 							findedRoom.status = 'playing';
 							alreadyDrawnCards = [];
 							findedRoom.totalCards = totalCard;
@@ -511,12 +515,14 @@ io.on('connection', (socket) => {
 
 						findedRoom.players = await Promise.all(
 							findedRoom.players.map(async (player) => {
+								player.isTrumpShow = false;
 								if (player.userName === winner) {
 									// Assuming some asynchronous operation might happen here (like saving to the database)
 									return {
 										...player,
 										points: (player.points || 0) + 1,
-										isTurn: true
+										isTurn: true,
+										isTrumpShow: true
 									};
 								}
 								return player;
@@ -551,6 +557,8 @@ io.on('connection', (socket) => {
 							}));
 
 							// Update the total cards after player cards have been dealt
+							findedRoom.isTrumpSelected = false;
+							findedRoom.isStarted = false;
 							findedRoom.status = 'playing';
 							alreadyDrawnCards = [];
 							findedRoom.totalCards = totalCard;
@@ -588,12 +596,14 @@ io.on('connection', (socket) => {
 
 						findedRoom.players = await Promise.all(
 							findedRoom.players.map(async (player) => {
+								player.isTrumpShow = false;
 								if (player.userName === winner) {
 									// Assuming some asynchronous operation might happen here (like saving to the database)
 									return {
 										...player,
 										points: (player.points || 0) + 1,
-										isTurn: true
+										isTurn: true,
+										isTrumpShow: true
 									};
 								}
 								return player;
@@ -630,10 +640,13 @@ io.on('connection', (socket) => {
 							}));
 
 							// Update the total cards after player cards have been dealt
+							findedRoom.isTrumpSelected = false;
+							findedRoom.isStarted = false;
 							findedRoom.status = 'playing';
 							alreadyDrawnCards = [];
 							findedRoom.totalCards = totalCard;
 							findedRoom.players = updatedPlayers;
+
 						}
 					} else {
 						findedRoom.players[3].isTurn = true;
@@ -669,12 +682,14 @@ io.on('connection', (socket) => {
 
 						findedRoom.players = await Promise.all(
 							findedRoom.players.map(async (player) => {
+								player.isTrumpShow = false;
 								if (player.userName === winner) {
 									// Assuming some asynchronous operation might happen here (like saving to the database)
 									return {
 										...player,
 										points: (player.points || 0) + 1,
-										isTurn: true
+										isTurn: true,
+										isTrumpShow: true
 									};
 								}
 								return player;
@@ -710,11 +725,14 @@ io.on('connection', (socket) => {
 								return p;
 							}));
 
+							findedRoom.isTrumpSelected = false;
+							findedRoom.isStarted = false;
 							// Update the total cards after player cards have been dealt
 							findedRoom.status = 'playing';
 							alreadyDrawnCards = [];
 							findedRoom.totalCards = totalCard;
 							findedRoom.players = updatedPlayers;
+
 						}
 					} else {
 						findedRoom.players[0].isTurn = true;
@@ -722,7 +740,7 @@ io.on('connection', (socket) => {
 				}
 				const updatedRoom = await PlayingRoom.findOneAndUpdate(
 					{ _id: new mongoose.Types.ObjectId(roomId) },  // Filter condition
-					{ players: findedRoom.players, playedCards: findedRoom.playedCards, totalCards: findedRoom.totalCards },              // Update data
+					{ players: findedRoom.players, playedCards: findedRoom.playedCards, totalCards: findedRoom.totalCards, isStarted : findedRoom.isStarted, isTrumpSelected:findedRoom.isTrumpSelected },              // Update data
 					{ new: true }                                  // Options
 				);
 				isTurnUpdated = false;
