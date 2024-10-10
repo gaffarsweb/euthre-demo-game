@@ -3,6 +3,7 @@ const path = require("path");
 const cors = require("cors");
 const httpStatus = require("http-status");
 const config = require('./config/config');
+const redis = require('redis');
 const morgan = require('./config/morgan');
 // authentication
 const session = require('express-session');
@@ -30,6 +31,43 @@ const io = new Server(server, {
 		credentials: true
 	}
 });
+
+// Redis setup
+const client = redis.createClient({
+	url: 'redis://127.0.0.1:6379' // Use this URL format for newer redis client versions
+  });
+
+  client.on('error', (err) => {
+	console.error('Error:', err);
+  });
+
+  async function playgameChache(roomId, findedRoom) {
+	try {
+	  // Connect to Redis
+	  await client.connect();
+	  console.log('Connected to Redis');
+  
+	  // Set a key-value pair
+	  const reply = await client.set(roomId, JSON.stringify(findedRoom));
+	  console.log('Set key response:', reply);
+	  
+	  // Get the value back
+	  const value = await client.get(roomId);
+	  console.log('Value of testKey:', value);
+	  return value
+	} catch (err) {
+	  console.error('Error in Redis operations:', err);
+	} finally {
+	  // Close the connection
+	  await client.quit();
+	}
+  }
+  
+  // Call the async function to run Redis operations
+  
+
+
+
 
 if (config.env !== 'test') {
 	app.use(morgan.successHandler);
@@ -111,7 +149,6 @@ async function getRandomCards(totalCard, count) {
 
 
 function findTrickWinner(cards, trumpSuit) {
-	console.log('suid', trumpSuit)
 	// Define the rank values of cards (highest to lowest)
 	const rankOrder = ['9', '10', 'J', 'Q', 'K', 'A'];
 
@@ -243,7 +280,6 @@ const reciveTrumpSelectedCard = (players, selectedCard)=>{
 	for (let i = 0; i < players.length; i++) {
 
 		if(players[i].isDealer){
-			console.log('dealer card geted')
 			players[i].cards.push(selectedCard)
 
 			break;
@@ -256,7 +292,6 @@ const removedCard = (players, removedCard)=>{
 	for (let i = 0; i < players.length; i++) {
 
 		if(players[i].cards.length > 5){
-			console.log('card greater then 5', removedCard);
             players[i].cards = players[i].cards.filter(e => e !== removedCard);
 
 			break;
@@ -274,7 +309,6 @@ const createDealer = async (players) => {
 
     for (let i = 0; i < players.length; i++) {
         if (players[i].isDealer) {
-            console.log('in dealer function', players);
 
             // Reset current dealer
             players[i].isDealer = false;
@@ -300,7 +334,6 @@ const passTrumpBox = async (players, count) => {
 	let trumpRound = count;
 	for (let i = 0; i < players.length; i++) {
 		if (players[i].isTrumpShow) {
-			console.log('is trump show ')
 			if(players[i].isDealer){
 				trumpRound = count + 1
 			}
@@ -328,24 +361,18 @@ io.on('connection', (socket) => {
 
 	socket.on('joinedRoom', async (e) => {
 
-		console.log(e.roomId)
 		if (e.roomId) {
 			socket.join(e.roomId);
 			const findedRoom = await PlayingRoom.findOne({ _id: new mongoose.Types.ObjectId(e.roomId) });
 			if (findedRoom) {
 				if (findedRoom.status == 'shuffling' && !playingRoom.includes(findedRoom._id)) {
-					console.log('plying')
 					//hash table
 					playingRoom.push(findedRoom._id)
-					console.log('added playing room for check')
 					findedRoom.players[0].isDealer = true;
 					let updatedPlayers = await Promise.all(findedRoom.players.map(async (p, index) => {
-						console.log(`Player ${p.userName} current cards:`, p.cards);
 						if (!p.cards || p.cards.length === 0) {
 							const card = await getRandomCards(totalCard, 5);
-							console.log('Cards drawn:', card);
 							totalCard = totalCard.filter(tc => !card.includes(tc));
-							console.log('Updated totalCard:', totalCard);
 							if (index == 1) {
 								return { ...p, cards: card, isTurn: true, isTrumpShow: true };
 							} else {
@@ -359,7 +386,6 @@ io.on('connection', (socket) => {
 					findedRoom.status = 'playing'
 					findedRoom.totalCards = totalCard;
 					findedRoom.players = updatedPlayers;
-					console.log('final findedRoom', findedRoom);
 					alreadyDrawnCards = [];
 					await findedRoom.save();
 					io.to(e.roomId).emit('roomUpdates', { roomData: findedRoom });
@@ -394,7 +420,6 @@ io.on('connection', (socket) => {
 							return 0
 						}
 					});
-					console.log('updated cards', updatedCart)
 					findedRoom.players[0].cards = updatedCart;
 					findedRoom.playedCards ? findedRoom.playedCards.push(playedCard) : findedRoom.playedCards = [playedCard];
 					isTurnUpdated = true;
@@ -402,14 +427,9 @@ io.on('connection', (socket) => {
 
 					if (findedRoom.playedCards.length == 4) {
 						const parsedCards = await parseCards(findedRoom.playedCards);
-						console.log('parsedCards', parsedCards)
 
 						const trumpSuit =  parseTrumCard(findedRoom.totalCards[0])
-						console.log('trumpSuid ', trumpSuit)
 						const winner = findTrickWinner(parsedCards, trumpSuit.suit);
-						console.log('findedWinner', winner)
-
-						console.log('winnerUsername', winner);
 						findedRoom.players = await Promise.all(
 							findedRoom.players.map(async (player) => {
 								if (player.userName === winner) {
@@ -426,7 +446,6 @@ io.on('connection', (socket) => {
 
 						findedRoom.playedCards = []
 						const playerCards = findedRoom.players.map((p) => {
-							console.log('pppppppppppppppppppppppppp', p.cards);
 
 							// Check if all elements in the cards array are 0
 							const allZero = p.cards.every(card => card === 0);
@@ -435,22 +454,16 @@ io.on('connection', (socket) => {
 							return allZero;
 						});
 						const allTrue = playerCards.every(c => c === true) ? true : false;
-						console.log('playerCards', playerCards, 'asdf', allTrue)
 						if (findedRoom.playedCards.length == 0 && allTrue) {
 
 							const updatePlayersDeiler = await createDealer(findedRoom.players);
-							console.log('update deilers', updatePlayersDeiler)
 							findedRoom.players = updatePlayersDeiler;
-							console.log('findedRoom players updates', findedRoom.players)
 
 							let updatedPlayers = await Promise.all(findedRoom.players.map(async (p, index) => {
-								console.log(`Player ${p.userName} current cards:`, p.cards);
 								if ((!p.cards || p.cards.length === 0) || allTrue) {
 									totalCard = ['9h', '10h', 'jh', 'qh', 'kh', 'ah', '9d', '10d', 'jd', 'qd', 'kd', 'ad', '9c', '10c', 'jc', 'qc', 'kc', 'ac', '9s', '10s', 'js', 'qs', 'ks', 'as'];
 									const card = await getRandomCards(totalCard, 5);
-									console.log('Cards drawn:', card);
 									totalCard = totalCard.filter(tc => !card.includes(tc));
-									console.log('Updated totalCard:', totalCard);
 									if (index == 1) {
 										return { ...p, cards: card };
 									} else {
@@ -484,7 +497,6 @@ io.on('connection', (socket) => {
 							return 0
 						}
 					});
-					console.log('updated cards', updatedCart)
 					findedRoom.players[1].cards = updatedCart;
 					findedRoom.playedCards ? findedRoom.playedCards.push(playedCard) : findedRoom.playedCards = [playedCard];
 
@@ -493,14 +505,10 @@ io.on('connection', (socket) => {
 
 					if (findedRoom.playedCards.length == 4) {
 						const parsedCards = await parseCards(findedRoom.playedCards);
-						console.log('parsedCards', parsedCards)
 
 						const trumpSuit = await parseTrumCard(findedRoom.totalCards[0])
-						console.log('trumpSuid ', trumpSuit)
 						const winner = findTrickWinner(parsedCards, trumpSuit.suit);
-						console.log('findedWinner', winner)
 
-						console.log('winnerUsername', winner);
 						findedRoom.players = await Promise.all(
 							findedRoom.players.map(async (player) => {
 								if (player.userName === winner) {
@@ -517,31 +525,22 @@ io.on('connection', (socket) => {
 
 						findedRoom.playedCards = []
 						const playerCards = findedRoom.players.map((p) => {
-							console.log('pppppppppppppppppppppppppp', p.cards);
-
-							// Check if all elements in the cards array are 0
 							const allZero = p.cards.every(card => card === 0);
 
 							// Return true if all elements are 0, otherwise false
 							return allZero;
 						});
 						const allTrue = playerCards.every(c => c === true) ? true : false;
-						console.log('playerCards', playerCards, 'asdf', allTrue)
 						if (findedRoom.playedCards.length == 0 && allTrue) {
 
 							const updatePlayersDeiler = await createDealer(findedRoom.players);
-							console.log('update deilers', updatePlayersDeiler)
 							findedRoom.players = updatePlayersDeiler;
-							console.log('findedRoom players updates', findedRoom.players)
 
 							let updatedPlayers = await Promise.all(findedRoom.players.map(async (p, index) => {
-								console.log(`Player ${p.userName} current cards:`, p.cards);
 								if ((!p.cards || p.cards.length === 0) || allTrue) {
 									totalCard = ['9h', '10h', 'jh', 'qh', 'kh', 'ah', '9d', '10d', 'jd', 'qd', 'kd', 'ad', '9c', '10c', 'jc', 'qc', 'kc', 'ac', '9s', '10s', 'js', 'qs', 'ks', 'as'];
 									const card = await getRandomCards(totalCard, 5);
-									console.log('Cards drawn:', card);
 									totalCard = totalCard.filter(tc => !card.includes(tc));
-									console.log('Updated totalCard:', totalCard);
 									if (index == 2) {
 										return { ...p, cards: card };
 									} else {
@@ -576,7 +575,6 @@ io.on('connection', (socket) => {
 							return 0
 						}
 					});
-					console.log('updated cards', updatedCart)
 					findedRoom.players[2].cards = updatedCart;
 					findedRoom.playedCards ? findedRoom.playedCards.push(playedCard) : findedRoom.playedCards = [playedCard];
 
@@ -584,14 +582,10 @@ io.on('connection', (socket) => {
 					console.log('user 3 updated')
 					if (findedRoom.playedCards.length == 4) {
 						const parsedCards = await parseCards(findedRoom.playedCards);
-						console.log('parsedCards', parsedCards)
 
 						const trumpSuit = await parseTrumCard(findedRoom.totalCards[0])
-						console.log('trumpSuid ', trumpSuit)
 						const winner = findTrickWinner(parsedCards, trumpSuit.suit);
-						console.log('findedWinner', winner)
 
-						console.log('winnerUsername', winner);
 						findedRoom.players = await Promise.all(
 							findedRoom.players.map(async (player) => {
 								if (player.userName === winner) {
@@ -608,7 +602,6 @@ io.on('connection', (socket) => {
 
 						findedRoom.playedCards = []
 						const playerCards = findedRoom.players.map((p) => {
-							console.log('pppppppppppppppppppppppppp', p.cards);
 
 							// Check if all elements in the cards array are 0
 							const allZero = p.cards.every(card => card === 0);
@@ -617,22 +610,16 @@ io.on('connection', (socket) => {
 							return allZero;
 						});
 						const allTrue = playerCards.every(c => c === true) ? true : false;
-						console.log('playerCards', playerCards, 'asdf', allTrue)
 						if (findedRoom.playedCards.length == 0 && allTrue) {
 
 							const updatePlayersDeiler = await createDealer(findedRoom.players);
-							console.log('update deilers', updatePlayersDeiler)
 							findedRoom.players = updatePlayersDeiler;
-							console.log('findedRoom players updates', findedRoom.players)
 
 							let updatedPlayers = await Promise.all(findedRoom.players.map(async (p, index) => {
-								console.log(`Player ${p.userName} current cards:`, p.cards);
 								if ((!p.cards || p.cards.length === 0) || allTrue) {
 									totalCard = ['9h', '10h', 'jh', 'qh', 'kh', 'ah', '9d', '10d', 'jd', 'qd', 'kd', 'ad', '9c', '10c', 'jc', 'qc', 'kc', 'ac', '9s', '10s', 'js', 'qs', 'ks', 'as'];
 									const card = await getRandomCards(totalCard, 5);
-									console.log('Cards drawn:', card);
 									totalCard = totalCard.filter(tc => !card.includes(tc));
-									console.log('Updated totalCard:', totalCard);
 									if (index == 3) {
 										return { ...p, cards: card };
 									} else {
@@ -666,7 +653,6 @@ io.on('connection', (socket) => {
 							return 0
 						}
 					});
-					console.log('updated cards', updatedCart)
 					findedRoom.players[3].cards = updatedCart;
 					findedRoom.playedCards ? findedRoom.playedCards.push(playedCard) : findedRoom.playedCards = [playedCard];
 
@@ -677,14 +663,10 @@ io.on('connection', (socket) => {
 
 					if (findedRoom.playedCards.length == 4) {
 						const parsedCards = await parseCards(findedRoom.playedCards);
-						console.log('parsedCards', parsedCards)
 
 						const trumpSuit = await parseTrumCard(findedRoom.totalCards[0])
-						console.log('trumpSuid ', trumpSuit)
 						const winner = findTrickWinner(parsedCards, trumpSuit.suit);
-						console.log('findedWinner', winner)
 
-						console.log('winnerUsername', winner);
 						findedRoom.players = await Promise.all(
 							findedRoom.players.map(async (player) => {
 								if (player.userName === winner) {
@@ -701,7 +683,6 @@ io.on('connection', (socket) => {
 
 						findedRoom.playedCards = []
 						const playerCards = findedRoom.players.map((p) => {
-							console.log('pppppppppppppppppppppppppp', p.cards);
 
 							// Check if all elements in the cards array are 0
 							const allZero = p.cards.every(card => card === 0);
@@ -710,22 +691,16 @@ io.on('connection', (socket) => {
 							return allZero;
 						});
 						const allTrue = playerCards.every(c => c === true) ? true : false;
-						console.log('playerCards', playerCards, 'asdf', allTrue)
 						if (findedRoom.playedCards.length == 0 && allTrue) {
 
 							const updatePlayersDeiler = await createDealer(findedRoom.players);
-							console.log('update deilers', updatePlayersDeiler)
 							findedRoom.players = updatePlayersDeiler;
-							console.log('findedRoom players updates', findedRoom.players)
 
 							let updatedPlayers = await Promise.all(findedRoom.players.map(async (p, index) => {
-								console.log(`Player ${p.userName} current cards:`, p.cards);
 								if ((!p.cards || p.cards.length === 0) || allTrue) {
 									totalCard = ['9h', '10h', 'jh', 'qh', 'kh', 'ah', '9d', '10d', 'jd', 'qd', 'kd', 'ad', '9c', '10c', 'jc', 'qc', 'kc', 'ac', '9s', '10s', 'js', 'qs', 'ks', 'as'];
 									const card = await getRandomCards(totalCard, 5);
-									console.log('Cards drawn:', card);
 									totalCard = totalCard.filter(tc => !card.includes(tc));
-									console.log('Updated totalCard:', totalCard);
 									if (index == 0) {
 										return { ...p, cards: card };
 									} else {
@@ -745,13 +720,11 @@ io.on('connection', (socket) => {
 						findedRoom.players[0].isTurn = true;
 					}
 				}
-				console.log('here have updajte issue')
 				const updatedRoom = await PlayingRoom.findOneAndUpdate(
 					{ _id: new mongoose.Types.ObjectId(roomId) },  // Filter condition
 					{ players: findedRoom.players, playedCards: findedRoom.playedCards, totalCards: findedRoom.totalCards },              // Update data
 					{ new: true }                                  // Options
 				);
-				console.log('updated', updatedRoom)
 				isTurnUpdated = false;
 				const clients = io.sockets.adapter.rooms.get(roomId);
 
@@ -764,7 +737,6 @@ io.on('connection', (socket) => {
 				io.to(roomId).emit('roomUpdates', { roomData: updatedRoom });
 				console.log('emited',)
 				const playerCards = findedRoom.players.map((p) => {
-					console.log('pppppppppppppppppppppppppp', p.cards);
 
 					// Check if all elements in the cards array are 0
 					const allZero = p.cards.every(card => card === 0);
@@ -790,23 +762,16 @@ io.on('connection', (socket) => {
 		if (roomId) {
 			let findedRoom = await PlayingRoom.findOne({ _id: new mongoose.Types.ObjectId(roomId) });
 			let {players, trumpRound} = await passTrumpBox(findedRoom.players, findedRoom.trumpRound);
-			console.log('updated players, and trum round', players )
-			console.log('updated players, and trum round', trumpRound )
 			findedRoom.players = players;
 			if(trumpRound == 2){
 				trumpRound = 0
 				const updatePlayersDeiler = await createDealer(findedRoom.players);
-				console.log('update deilers', updatePlayersDeiler)
 				findedRoom.players = updatePlayersDeiler;
-				console.log('findedRoom players updates', findedRoom.players)
 
 				let updatedPlayers = await Promise.all(findedRoom.players.map(async (p, index) => {
-					console.log(`Player ${p.userName} current cards:`, p.cards);
 						totalCard = ['9h', '10h', 'jh', 'qh', 'kh', 'ah', '9d', '10d', 'jd', 'qd', 'kd', 'ad', '9c', '10c', 'jc', 'qc', 'kc', 'ac', '9s', '10s', 'js', 'qs', 'ks', 'as'];
 						const card = await getRandomCards(totalCard, 5);
-						console.log('Cards drawn:', card);
 						totalCard = totalCard.filter(tc => !card.includes(tc));
-						console.log('Updated totalCard:', totalCard);
 						if (index == 1) {
 							return { ...p, cards: card };
 						} else {
@@ -826,7 +791,7 @@ io.on('connection', (socket) => {
 				{ players: findedRoom.players , trumpRound: trumpRound, totalCards:findedRoom.totalCards },              // Update data
 				{ new: true }                                  // Options
 			);
-			console.log('updated', updatedRoom);
+			
 
 
 
@@ -853,7 +818,7 @@ io.on('connection', (socket) => {
 				{ trumpSymbole : selectedCard, isTrumpSelected:true, trumpRound:0, isStarted : true },              // Update data
 				{ new: true }                                  // Options
 			);
-			console.log('updated', updatedRoom);
+			
 
 
 
@@ -883,7 +848,6 @@ io.on('connection', (socket) => {
 				{ trumpSymbole : selectedCard, isTrumpSelected:true, players : findedRoom.players, trumpRound : 0  },              // Update data
 				{ new: true }                                  // Options
 			);
-			console.log('updated', updatedRoom);
 
 
 
@@ -905,7 +869,6 @@ io.on('connection', (socket) => {
 		const removedCardSelected= e.card;
 		let findedRoom = await PlayingRoom.findOne({ _id: new mongoose.Types.ObjectId(roomId) });
 			const updatedPlayers = await removedCard(findedRoom.players, removedCardSelected);
-			console.log('removed Card', updatedPlayers)
 			findedRoom.players = updatedPlayers;
 
 
@@ -915,7 +878,6 @@ io.on('connection', (socket) => {
 					{  players : findedRoom.players , isStarted : true },              // Update data
 					{ new: true }                                  // Options
 				);
-				console.log('updated', updatedRoom);
 	
 	
 	
