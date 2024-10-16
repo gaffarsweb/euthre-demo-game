@@ -4,9 +4,10 @@ const sendResponse = require('../../../utilities/responseHandler');
 const userService = require("../services");
 
 const createRoomandUPdate = catchAsync(async (req, res) => {
-	let body = req?.body || {};
+	let user  = req.user 
 
-	let result = await userService.createRoomandUPdate({ body })
+	let result = await userService.createRoomandUPdate({  user })
+	console.log('result', result)
 	if (result?.status) {
 		sendResponse(res,
 			result?.code == 201 ? httpStatus.CREATED

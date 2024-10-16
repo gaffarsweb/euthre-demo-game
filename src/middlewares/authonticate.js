@@ -13,11 +13,12 @@ const authenticate = async (req, res, next) => {
   }
 
   const token = authHeader.split(' ')[1];
+  console.log(token)
 
   try {
     const verificationResponse = await descopeClient.validateJwt(token);
-    if (verificationResponse.ok) {
-      req.user = verificationResponse.data; // Attach user data to the request object
+    if (verificationResponse) {
+      req.user = verificationResponse; // Attach user data to the request object
       next();
     } else {
       return res.status(401).json({ msg: 'Token is not valid', status: false });

@@ -3,6 +3,7 @@ const levelModel = require('../level.model');
 
 const addLevel = async ({ user, body }) => {
     try {
+        console.log(user, body);
 
         if (!user || !body || !body.levelName) {
             throw new Error('Invalid input: user, body, or levelName is missing');
