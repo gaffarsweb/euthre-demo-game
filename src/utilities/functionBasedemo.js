@@ -205,11 +205,11 @@ socket.on('TrumpSelected', async (e) => {
 		findedRoom = await PlayingRoom.findOne({ _id: new mongoose.Types.ObjectId(roomId) });
 	}
 
-	const { teamOne, teamTwo } = await reciveTrumpSelectedCard(findedRoom.teamOne, findedRoom.teamTwo, selectedCard);
+	const { teamOnes, teamTwos } = await reciveTrumpSelectedCard(findedRoom.teamOne, findedRoom.teamTwo, selectedCard);
 
 	if (roomId) {
-		findedRoom.teamOne = teamOne;
-		findedRoom.teamTwo = teamTwo;
+		findedRoom.teamOne = teamOnes;
+		findedRoom.teamTwo = teamTwos;
 		findedRoom.trumpSuit = selectedCard;
 		findedRoom.isTrumpSelected = true;
 		findedRoom.trumpRound = 0;

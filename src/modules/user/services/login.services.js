@@ -30,6 +30,7 @@ const login = async ({ body }) => {
 
             const resp = await descopeClient.password.signIn(loginId, body.password);
             if (resp.ok) {
+                resp.data.user.userName = existtedUser.userName;
                 if(existtedUser?.isEmailVerified){
                     return { data: resp, status: true, code: 200 }
                 }else if(!existtedUser?.isEmailVerified){
@@ -61,10 +62,8 @@ const login = async ({ body }) => {
                         }
                         if (newResponse?.data?.user?.userId) {
                             body.descopeId = newResponse?.data?.user?.userId
-                            console.log('newrespose', body)
                         }
                         if (existtedUser?.isEmailVerified) {
-                            console.log('Email is verified:', existtedUser?.isEmailVerified);
 
                             // Call Descope's update method to verify the email
                             const loginId = existtedUser?.email
@@ -85,6 +84,7 @@ const login = async ({ body }) => {
                         }
 
 
+                        newResponse.data.user.userName = existtedUser.userName;
                         const newUser = await UserModel.findOneAndUpdate({ email: existtedUser?.email }, body);
 
                         if (newUser) {

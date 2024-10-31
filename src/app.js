@@ -3,9 +3,8 @@ const path = require("path");
 const cors = require("cors");
 const httpStatus = require("http-status");
 const config = require('./config/config');
-const redis = require('redis');
-const RoomHandler = require('./utilities/RoomHandler'); // Import the RoomHandler class
-const TrumpBoxManager = require('./utilities/trumpBoxManager'); // Import the RoomHandler class
+const RoomHandler = require('./utilities/gameTable/RoomHandler'); // Import the RoomHandler class
+const TrumpBoxManager = require('./utilities/gameTable/trumpBoxManager'); // Import the RoomHandler class
 const morgan = require('./config/morgan');
 // authentication
 const session = require('express-session');
@@ -15,18 +14,25 @@ const { jwtStrategy } = require('./config/jwtStrategy');
 const { authLimiter } = require('./middlewares/rateLimiter');
 const ApiError = require("./utilities/apiErrors");
 // routes
+const BotNameGenerator = require('./utilities/getRandomUserNameForBots')
 const routes = require('./routes');
 const { errorConverter, errorHandler } = require("./middlewares/error");
 
 const app = express();
 const http = require('http');
+const ioClient = require('socket.io-client');
 const server = http.createServer(app);
 const { Server } = require('socket.io');
 const PlayingRoom = require("./modules/playingroom/playingRoom.model");
 const { default: mongoose } = require("mongoose");
 const sendResponse = require("./utilities/responseHandler");
-const { GameManager } = require("./utilities/gamePlayFunctions");
-const TrumpSelectionManager = require("./utilities/TrumpSelectionManager");
+const { GameManager } = require("./utilities/gameTable/gamePlayFunctions");
+const TrumpSelectionManager = require("./utilities/gameTable/TrumpSelectionManager");
+const client = require('./utilities/redisClient');
+const PlayAloneHandler = require("./utilities/gameTable/PlayAloneHandler");
+const getRandomAlphabeticChars = require("./utilities/getRendomUserIdBOT");
+const checkIsTurn = require("./utilities/gameTable/checkIsTrun");
+const checkIsBotTurn = require("./utilities/botTable/checkisBotTurn");
 const io = new Server(server, {
 	cors: {
 		origin: "*", // Change to your frontend URL for production
@@ -35,38 +41,6 @@ const io = new Server(server, {
 		credentials: true
 	}
 });
-
-// Redis setup
-const client = redis.createClient();
-
-client.on('error', (err) => {
-	console.error('Error:', err);
-});
-client.connect();
-
-//   async function playgameChache(roomId, findedRoom) {
-// 	try {
-// 	  // Connect to Redis
-// 	  console.log('Connected to Redis');
-
-// 	  // Set a key-value pair
-// 	  const reply = await client.set(roomId, JSON.stringify(findedRoom));
-// 	  console.log('Set key response:', reply);
-
-// 	  // Get the value back
-// 	  const value = await client.get(roomId);
-// 	  console.log('Value of testKey:', value);
-// 	  return value
-// 	} catch (err) {
-// 	  console.error('Error in Redis operations:', err);
-// 	} finally {
-// 	  // Close the connection
-// 	  await client.quit();
-// 	}
-//   }
-//   playgameChache('gaffar','vakye')
-// Call the async function to run Redis operations
-
 
 
 
@@ -81,10 +55,15 @@ app.use(express.json({ limit: '50mb' }));
 
 // parse urlencoded request body
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
-
+const corsOptions = {
+	origin: "*", // Change to your frontend URL for production
+	methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+	allowedHeaders: ["Authorization", "Content-Type"],
+	credentials: true,
+};
 // enable cors
-app.use(cors());
-app.options('*', cors());
+app.use(cors(corsOptions));
+app.options('*', cors(corsOptions));
 
 // Limit repeated failed requests to auth endpoints
 if (config.env === 'production') {
@@ -116,10 +95,10 @@ app.use(passport.session());
 passport.use('jwt', jwtStrategy);
 
 app.use('/v1', routes);
-app.use('/', (req, res) => {
-	res.send('Server Started');
-});
-
+// app.use('/', (req, res) => {
+// 	res.send('Server Started');
+// });
+app.use('/', express.static(path.join(__dirname, 'Disk/Build')));
 app.use((req, res, next) => {
 	const error = new ApiError(httpStatus.NOT_FOUND, 'API Not Found');
 	next(error); // Passes the error to the error-handling middleware
@@ -146,10 +125,11 @@ let totalCard = ['9h', '10h', 'jh', 'qh', 'kh', 'ah', '9d', '10d', 'jd', 'qd', '
 
 io.on('connection', (socket) => {
 	console.log('a user connected');
+	const trumpBoxManager = new TrumpBoxManager(io, client);
 	const roomHandler = new RoomHandler(io, socket, client);
 	const trumpSelectionManager = new TrumpSelectionManager(io, client, socket);
-	const trumpBoxManager = new TrumpBoxManager(io, client);
-	
+	new PlayAloneHandler(io, socket)
+
 	socket.on('disconnect', () => {
 		console.log('user disconnected');
 	});
@@ -159,12 +139,24 @@ io.on('connection', (socket) => {
 
 	socket.on('gamPlayed', async (e) => {
 		try {
-			const roomId = e.roomId;
-			let playedCard = e.card;
+			console.log('game played :', e)
+			let data = e;
+
+			if (typeof e === 'string') {
+				data = JSON.parse(e);
+			}
+
+			if (typeof data === 'string') {
+				data = JSON.parse(data);
+			}
+			const roomId = data.roomId;
+			let playedCard = data.card;
 
 
-			if (roomId && isTurnUpdated == false) {
+			if (roomId && !playingRoom.includes(roomId)) {
+				playingRoom.push(roomId);
 				let findedRoom = await client.get(roomId);
+				let lastTrickUpdates = {};
 				console.log('game played', findedRoom)
 				if (typeof findedRoom === 'string') {
 					findedRoom = JSON.parse(findedRoom);
@@ -190,15 +182,47 @@ io.on('connection', (socket) => {
 					isTurnUpdated = true;
 					console.log('user 1 updated')
 
-					if (findedRoom.playedCards.length == 4) {
-						const gameManager = new GameManager(findedRoom);
-						const udpatedFindedRooom = await gameManager.playerOne(findedRoom);
-						console.log('updated findedRoom', udpatedFindedRooom)
-						findedRoom = udpatedFindedRooom
-					} else {
-						findedRoom.teamTwo[0].isTurn = true;
+					let isPlayAlone = false
+					isPlayAlone = await findedRoom.teamOne.some(player => player.isPlayAlone === true) || findedRoom.teamTwo.some(player => player.isPlayAlone === true);
+					const cardPlayedUpdate = {
+						card: playedCard.card,
+						userId: playedCard.UserId,
+						isPlayingAlone: isPlayAlone
 					}
 
+					io.to(roomId).emit('CardPlayed', { roomData: cardPlayedUpdate });
+
+					if (findedRoom.playedCards.length == 4 || (findedRoom.playedCards.length == 3 && isPlayAlone)) {
+						const gameManager = new GameManager(findedRoom, io);
+						const { udpatedFindedRooom, lastTrickUpdate } = await gameManager.playerOne(findedRoom, client);
+						console.log('updated findedRoom', udpatedFindedRooom)
+						lastTrickUpdates = lastTrickUpdate
+						findedRoom = udpatedFindedRooom;
+						isPlayAlone = false;
+					} else {
+						if (findedRoom.teamTwo[0].isPartnerPlayingAlone) {
+							findedRoom.teamOne[1].isTurn = true
+							let next = {
+								nextTurnId: findedRoom.teamOne[1].UserId,
+								isPlayingAlone: true
+							}
+							io.to(roomId).emit('NextTurn', { roomData: next });
+							const updatedRoom = await checkIsBotTurn(findedRoom, io, roomId)
+							findedRoom = updatedRoom;
+
+						} else {
+							findedRoom.teamTwo[0].isTurn = true;
+							let next = {
+								nextTurnId: findedRoom.teamTwo[0].UserId,
+								isPlayingAlone: false
+							}
+							io.to(roomId).emit('NextTurn', { roomData: next });
+							const updatedRoom = await checkIsBotTurn(findedRoom, io, roomId)
+							findedRoom = updatedRoom;
+
+						}
+
+					}
 
 
 				} else if (findedRoom.teamTwo[0].isTurn == true) {
@@ -220,14 +244,46 @@ io.on('connection', (socket) => {
 					isTurnUpdated = true;
 					console.log('user 2 updated')
 
-					if (findedRoom.playedCards.length == 4) {
+					let isPlayAlone = false
+					isPlayAlone = await findedRoom.teamOne.some(player => player.isPlayAlone === true) || findedRoom.teamTwo.some(player => player.isPlayAlone === true);
+					const cardPlayedUpdate = {
+						card: playedCard.card,
+						userId: playedCard.UserId,
+						isPlayingAlone: isPlayAlone
+					}
 
-						const gameManager = new GameManager(findedRoom);
-						const udpatedFindedRooom = await gameManager.playerOne(findedRoom);
+					io.to(roomId).emit('CardPlayed', { roomData: cardPlayedUpdate });
+					if (findedRoom.playedCards.length == 4 || (findedRoom.playedCards.length == 3 && isPlayAlone)) {
+
+						const gameManager = new GameManager(findedRoom, io);
+						const { udpatedFindedRooom, lastTrickUpdate } = await gameManager.playerOne(findedRoom, client);
 						console.log('updated findedRoom', udpatedFindedRooom)
-						findedRoom = udpatedFindedRooom
+						lastTrickUpdates = lastTrickUpdate
+						findedRoom = udpatedFindedRooom;
+						isPlayAlone = false;
 					} else {
-						findedRoom.teamOne[1].isTurn = true;
+						if (findedRoom.teamOne[1].isPartnerPlayingAlone) {
+							findedRoom.teamTwo[1].isTurn = true;
+							let next = {
+								nextTurnId: findedRoom.teamTwo[1].UserId,
+								isPlayingAlone: true
+							}
+							io.to(roomId).emit('NextTurn', { roomData: next });
+							const updatedRoom = await checkIsBotTurn(findedRoom, io, roomId)
+							findedRoom = updatedRoom;
+
+						} else {
+							findedRoom.teamOne[1].isTurn = true;
+							let next = {
+								nextTurnId: findedRoom.teamOne[1].UserId,
+								isPlayingAlone: false
+							}
+							io.to(roomId).emit('NextTurn', { roomData: next });
+							const updatedRoom = await checkIsBotTurn(findedRoom, io, roomId)
+							findedRoom = updatedRoom;
+
+						}
+
 					}
 
 
@@ -250,14 +306,45 @@ io.on('connection', (socket) => {
 
 					isTurnUpdated = true;
 					console.log('user 3 updated')
-					if (findedRoom.playedCards.length == 4) {
+					let isPlayAlone = false
+					isPlayAlone = await findedRoom.teamOne.some(player => player.isPlayAlone === true) || findedRoom.teamTwo.some(player => player.isPlayAlone === true);
+					const cardPlayedUpdate = {
+						card: playedCard.card,
+						userId: playedCard.UserId,
+						isPlayingAlone: isPlayAlone
+					}
 
-						const gameManager = new GameManager(findedRoom);
-						const udpatedFindedRooom = await gameManager.playerOne(findedRoom);
+					io.to(roomId).emit('CardPlayed', { roomData: cardPlayedUpdate });
+					if (findedRoom.playedCards.length == 4 || (findedRoom.playedCards.length == 3 && isPlayAlone)) {
+
+						const gameManager = new GameManager(findedRoom, io);
+						const { udpatedFindedRooom, lastTrickUpdate } = await gameManager.playerOne(findedRoom, client);
 						console.log('updated findedRoom', udpatedFindedRooom)
-						findedRoom = udpatedFindedRooom
+						lastTrickUpdates = lastTrickUpdate
+						findedRoom = udpatedFindedRooom;
+						isPlayAlone = false;
 					} else {
-						findedRoom.teamTwo[1].isTurn = true;
+						if (findedRoom.teamTwo[1].isPartnerPlayingAlone) {
+							findedRoom.teamOne[0].isTurn = true;
+							let next = {
+								nextTurnId: findedRoom.teamOne[0].UserId,
+								isPlayingAlone: true
+							}
+							io.to(roomId).emit('NextTurn', { roomData: next });
+							const updatedRoom = await checkIsBotTurn(findedRoom, io, roomId)
+							findedRoom = updatedRoom;
+
+						} else {
+							findedRoom.teamTwo[1].isTurn = true;
+							let next = {
+								nextTurnId: findedRoom.teamTwo[1].UserId,
+								isPlayingAlone: false
+							}
+							io.to(roomId).emit('NextTurn', { roomData: next });
+							const updatedRoom = await checkIsBotTurn(findedRoom, io, roomId)
+							findedRoom = updatedRoom;
+
+						}
 					}
 
 
@@ -282,21 +369,48 @@ io.on('connection', (socket) => {
 					console.log('user 4 updated');
 
 
-					if (findedRoom.playedCards.length == 4) {
+					let isPlayAlone = false
+					isPlayAlone = await findedRoom.teamOne.some(player => player.isPlayAlone === true) || findedRoom.teamTwo.some(player => player.isPlayAlone === true);
+					const cardPlayedUpdate = {
+						card: playedCard.card,
+						userId: playedCard.UserId,
+						isPlayingAlone: isPlayAlone
+					}
 
-						const gameManager = new GameManager(findedRoom);
-						const udpatedFindedRooom = await gameManager.playerOne(findedRoom);
+					io.to(roomId).emit('CardPlayed', { roomData: cardPlayedUpdate });
+					if (findedRoom.playedCards.length == 4 || (findedRoom.playedCards.length == 3 && isPlayAlone)) {
+
+						const gameManager = new GameManager(findedRoom, io);
+						const { udpatedFindedRooom, lastTrickUpdate } = await gameManager.playerOne(findedRoom, client);
 						console.log('updated findedRoom', udpatedFindedRooom)
-						findedRoom = udpatedFindedRooom
+						lastTrickUpdates = lastTrickUpdate
+						findedRoom = udpatedFindedRooom;
+						isPlayAlone = false;
 					} else {
-						findedRoom.teamOne[0].isTurn = true;
+						if (findedRoom.teamOne[0].isPartnerPlayingAlone) {
+							findedRoom.teamTwo[0].isTurn = true;
+							let next = {
+								nextTurnId: findedRoom.teamTwo[0].UserId,
+								isPlayingAlone: true
+							}
+							io.to(roomId).emit('NextTurn', { roomData: next });
+							const updatedRoom = await checkIsBotTurn(findedRoom, io, roomId)
+							findedRoom = updatedRoom;
+
+						} else {
+							findedRoom.teamOne[0].isTurn = true;
+							let next = {
+								nextTurnId: findedRoom.teamOne[0].UserId,
+								isPlayingAlone: false
+							}
+							io.to(roomId).emit('NextTurn', { roomData: next });
+							const updatedRoom = await checkIsBotTurn(findedRoom, io, roomId)
+							findedRoom = updatedRoom;
+
+						}
 					}
 				}
-				// const updatedRoom = await PlayingRoom.findOneAndUpdate(
-				// 	{ _id: new mongoose.Types.ObjectId(roomId) },  // Filter condition
-				// 	{ players: findedRoom.players, playedCards: findedRoom.playedCards, totalCards: findedRoom.totalCards, isStarted : findedRoom.isStarted, isTrumpSelected:findedRoom.isTrumpSelected },              // Update data
-				// 	{ new: true }                                  // Options
-				// );
+
 				isTurnUpdated = false;
 				const clients = io.sockets.adapter.rooms.get(roomId);
 
@@ -305,34 +419,209 @@ io.on('connection', (socket) => {
 				} else {
 					console.log('No clients in the room');
 				}
-
-				io.to(roomId).emit('roomUpdates', { roomData: findedRoom });
-				await client.set(roomId, JSON.stringify(findedRoom));
-				console.log('emited',)
-				const playedCardsTeamOne = findedRoom.teamOne.map((p) => {
-					const allZero = p.cards.every(card => card === 0);
-					return allZero;
-				});
-				const teamOneTrue = playedCardsTeamOne.every(c => c === true) ? true : false;
-				const playedCardsTeamTwo = findedRoom.teamTwo.map((p) => {
-					const allZero = p.cards.every(card => card === 0);
-					return allZero;
-				});
-				const teamTwoTrue = playedCardsTeamTwo.every(c => c === true) ? true : false;
-				if (teamOneTrue && teamTwoTrue) {
-					totalCard = ['9h', '10h', 'jh', 'qh', 'kh', 'ah', '9d', '10d', 'jd', 'qd', 'kd', 'ad', '9c', '10c', 'jc', 'qc', 'kc', 'ac', '9s', '10s', 'js', 'qs', 'ks', 'as'];
+				const index = playingRoom.indexOf(roomId);
+				if (index !== -1) {
+					playingRoom.splice(index, 1);
 				}
 
+
+
+				if (lastTrickUpdates) {
+					// io.to(roomId).emit('roundEndResult', { roundEndResult: lastTrickUpdates });
+				}
+				io.to(roomId).emit('roomUpdates', { roomData: findedRoom });
+				lastTrickUpdates = {}
+				console.log('game roompudatesss', findedRoom)
+				const updateClient = await client.set(roomId, JSON.stringify(findedRoom));
+				if (updateClient != 'OK') {
+					const updatedRoom = await PlayingRoom.findOneAndUpdate(
+						{ _id: new mongoose.Types.ObjectId(roomId) },  // Filter condition
+						findedRoom,              // Update data
+						{ new: true }                                  // Options
+					);
+				}
+
+
+				if (findedRoom.teamOnePoints && findedRoom.teamOnePoints.winningPoint >= 10) {
+					findedRoom.teamOnePoints.isWinner = true;
+					findedRoom.status = 'complete';
+					findedRoom.isWinner = 'teamOne';
+					await PlayingRoom.findOneAndUpdate(
+						{ _id: new mongoose.Types.ObjectId(roomId) },
+						findedRoom,
+						{ new: true }
+					)
+					await client.del(roomId)
+				}
+				if (findedRoom.teamTwoPoints && findedRoom.teamTwoPoints.winningPoint >= 10) {
+					findedRoom.teamTwoPoints.isWinner = true;
+					findedRoom.status = 'complete';
+					findedRoom.isWinner = 'teamTwo';
+					await PlayingRoom.findOneAndUpdate(
+						{ _id: new mongoose.Types.ObjectId(roomId) },
+						findedRoom,
+						{ new: true }
+					);
+					await client.del(roomId);
+				}
+
+				console.log('emited',)
+				// const playedCardsTeamOne = findedRoom.teamOne.map((p) => {
+				// 	const allZero = p.cards.every(card => card === 0);
+				// 	return allZero;
+				// });
+				// const teamOneTrue = playedCardsTeamOne.every(c => c === true) ? true : false;
+				// const playedCardsTeamTwo = findedRoom.teamTwo.map((p) => {
+				// 	const allZero = p.cards.every(card => card === 0);
+				// 	return allZero;
+				// });
+				// const teamTwoTrue = playedCardsTeamTwo.every(c => c === true) ? true : false;
+				// if (teamOneTrue && teamTwoTrue) {
+				// 	totalCard = ['9h', '10h', 'jh', 'qh', 'kh', 'ah', '9d', '10d', 'jd', 'qd', 'kd', 'ad', '9c', '10c', 'jc', 'qc', 'kc', 'ac', '9s', '10s', 'js', 'qs', 'ks', 'as'];
+				// }
+
 			}
+			console.log('game played success')
 
 		} catch (error) {
 			console.error('Error in shuffleCards:', error);
 		}
 	});
+	socket.on('playWithPartner', async (e) => {
+		let data = e;
+		let action = 'Playing With Partner';
+		let playAlone = 0
+
+		if (typeof e === 'string') {
+			data = JSON.parse(e);
+		}
+
+		if (typeof data === 'string') {
+			data = JSON.parse(data);
+		}
+		const roomId = data.roomId;
+		const userId = data.userId;
+		let findedRoom = await client.get(roomId);
+		if (typeof findedRoom === 'string') {
+			findedRoom = JSON.parse(findedRoom);
+		}
+		if (typeof findedRoom === 'string') {
+			findedRoom = JSON.parse(findedRoom);
+		}
+		if (!findedRoom) {
+			findedRoom = await PlayingRoom.findOne({ _id: new mongoose.Types.ObjectId(roomId) });
+		}
+
+		io.to(roomId).emit('lastAction', { action, userId });
+		let NotifyAloneOrTeam = {
+			userId,
+			playingStatus: playAlone
+		}
+		io.to(roomId).emit('NotifyAloneOrTeam', { roomData: NotifyAloneOrTeam });
+
+		let isTurnData = await checkIsTurn(findedRoom.teamOne, findedRoom.teamTwo);
+		let next = {
+			nextTurnId: isTurnData.userId,
+			isPlayingAlone: isTurnData.isPlayingAlone
+		}
+		io.to(roomId).emit('NextTurn', { roomData: next });
+		await client.set(roomId, JSON.stringify(findedRoom));
+		const updatedRoom = await checkIsBotTurn(findedRoom, io, roomId)
+		await client.set(roomId, JSON.stringify(updatedRoom));
+
+	})
+
+	socket.on('rejoinPlayingGame', async (e) => {
+		let data = e;
 
 
-	
+		if (typeof e === 'string') {
+			data = JSON.parse(e);
+		}
+
+		if (typeof data === 'string') {
+			data = JSON.parse(data);
+		}
+		const roomId = data.roomId;
+		const userId = data.userId;
+
+		const findRoom = await PlayingRoom.aggregate([
+			{
+				$match: {
+					_id: mongoose.Types.ObjectId(roomId),
+					status: 'playing',
+					players: {
+						$elemMatch: { UserId: userId }
+					}
+				}
+			}
+
+		]);
+		if (findRoom.length > 0) {
+			socket.join(roomId);
+			let redisData = await client.get(roomId);
+			socket.emit('roomUpdates', { roomData: redisData });
+
+		} else {
+			console.log('no have finded room for this player')
+		}
+	});
+
+	socket.on('joinBot', async (e) => {
+		let data = e;
+		console.log('joined bot')
+
+		if (typeof e === 'string') {
+			data = JSON.parse(e);
+		}
+
+		if (typeof data === 'string') {
+			data = JSON.parse(data);
+		}
+		const userId = await getRandomAlphabeticChars();
+		const botNameManager = await new BotNameGenerator();
+		const userName = await botNameManager.getRandomBotName()
+		const socket = ioClient('http://localhost:3001');
+		const roomId = data.roomId;
+		const findRoom = await PlayingRoom.findOne({ _id: new mongoose.Types.ObjectId(roomId), status: 'finding' });
+
+		const playerObj = {
+			UserId: userId,
+			email: 'bot@gmail.com',
+			value: '',
+			role: 'bot',
+			userName: userName
+
+		};
+		if (findRoom) {
+
+			if (findRoom?.teamOne.length < 2) {
+				findRoom?.teamOne.push(playerObj);
+				findRoom?.players.push({ UserId: userId });
+				if (findRoom?.players.length == 4) {
+					findRoom.status = 'shuffling';
+					findRoom.save();
+					socket.emit('joinedRoom', { roomId });
+					console.log('joined called')
+				} else {
+					findRoom.save();
+				}
 
 
+			} else if (findRoom?.teamTwo.length < 2) {
+				findRoom?.teamTwo.push(playerObj);
+				findRoom?.players.push({ UserId: userId });
+				if (findRoom?.players.length == 4) {
+					findRoom.status = 'shuffling';
+					findRoom.save();
+					socket.emit('joinedRoom', { roomId });
+					console.log('joined called')
+				} else {
+					findRoom.save();
+				}
+
+			}
+		}
+	})
 });
 module.exports = { app, server };

@@ -7,7 +7,6 @@ const DescopeClient = require('@descope/node-sdk').default;
 
 const verifyEmail = async (token) => {
     try {
-        console.log('token', token)
         const decoded = verifyToken(token)
         if (decoded.status == false) {
             return decoded

@@ -28,7 +28,6 @@ module.exports = {
                 region: process.env.S3_REGION,
                 // s3ForcePathStyle: true,
             }
-            console.log(config);
 
             var s3 = new aws.S3(config);
             const BUCKET = process.env.SE_BUKETNAME;
