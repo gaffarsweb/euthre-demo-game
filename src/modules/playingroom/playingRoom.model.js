@@ -35,6 +35,10 @@ const playingroomSchema = new mongoose.Schema(
             type: String,
             default: ''
         },
+        trumpMaker: {
+            type: String,
+            default: ''
+        },
         gameLevel: {
             type: String,
             default: ''
@@ -47,6 +51,10 @@ const playingroomSchema = new mongoose.Schema(
             type: String,
             default: '',
         },
+        gameId: {
+            type: mongoose.Schema.Types.ObjectId, // Corrected type usage.
+            required: true, // Consider marking userId as required if needed.
+        },
         timeOut: {
             type: Number,
             default: 60
@@ -55,10 +63,50 @@ const playingroomSchema = new mongoose.Schema(
             type: String,
             default: ''
         },
+        tableName: {
+            type: String,
+            default: ''
+        },
+        Description: {
+            type: String,
+            default: ''
+        },
+
         status: {
             type: String,
             enum: status,
             default: 'finding',
+        },
+        roomType: {
+            type: String,
+            enum: ['private', 'public', 'tournament'],
+            default: 'public',
+        },
+        tournamentId: {
+            type: mongoose.Schema.Types.ObjectId,
+        },
+        passKey: {
+            type: String,
+            minlength: [8, 'Password must be at least 8 characters long'],
+            validate: {
+                validator: function (value) {
+                    return /^(?=.*\d)(?=.*[a-z])(?=.*[A-Z])(?=.*[!@#$%^&*]).{6,}$/.test(value);
+                },
+                message: 'Password must contain at least one uppercase letter, one lowercase letter, one digit, and one special character'
+            }
+        },
+        validityDate: {
+            type: Date,
+        },
+        dateOfCreation: {
+            type: Date,
+        },
+        validityTime: {
+            type: String,
+        },
+        isGameEnd: {
+            type: Boolean,
+            default: false,
         },
     },
     {

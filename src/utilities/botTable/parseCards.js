@@ -19,15 +19,27 @@ function parseCards(playersCards) {
 	};
 
 	// Map through the input array and convert the card string into rank and suit
+	// return playersCards.map(playerCard => {
+	// 	const cardDetails = getCardDetails(playerCard.card);
+	// 	return {
+	// 		playerId: playerCard.UserId,
+	// 		card:{
+	// 			rank: cardDetails.rank,
+	// 			suit: cardDetails.suit
+	// 		}
+	// 	};
+	// });
 	return playersCards.map(playerCard => {
-		const cardDetails = getCardDetails(playerCard.card);
-		return {
-			playerId: playerCard.UserId,
-			card:{
-				rank: cardDetails.rank,
-				suit: cardDetails.suit
-			}
-		};
+		const cardDetails = playerCard?.card ? getCardDetails(playerCard?.card) : null;
+		if(cardDetails){
+			return {
+				playerId: playerCard.UserId,
+				card:{
+					rank: cardDetails.rank,
+					suit: cardDetails.suit
+				}
+			};
+		}
 	});
 };
 module.exports = parseCards;

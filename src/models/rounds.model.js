@@ -1,34 +1,33 @@
 const mongoose = require('mongoose');
 const status = ['finding', 'playing', 'complete', 'shuffling'];
-const GameRoundsSchema = new mongoose.Schema(
+const GameRoundSchema = new mongoose.Schema(
     {
+
         roomId: {
             type: mongoose.Types.ObjectId,
             required:true
-        },
-        handId: {
-            type: mongoose.Types.ObjectId,
-            required:true
-        },
-        players: {
-            type: Array,
-            default: []
         },
         teamOne:{
             type:Array,
             default:[]
         },
+        teamOnePoints:{
+            type:Object,
+            default:{}
+        },
         teamTwo:{
             type:Array,
             default:[]
         },
-        playedCards: { type: Array, default: [] },
-        trumpSuit: { type: String, default: '' },
+        teamTwoPoints:{
+            type:Object,
+            default:{}
+        },
         active: {
             type: Boolean,
             default: true,
         },
-        isRoundWinnerId: {
+        isRoundWinner: {
             type: String,
             default: '',
         },
@@ -46,10 +45,10 @@ const GameRoundsSchema = new mongoose.Schema(
 
 
 // Encrypt password before saving
-GameRoundsSchema.pre('save', async function (next) {
+GameRoundSchema.pre('save', async function (next) {
     next();
 });
 
-const GameRounds = mongoose.model('GameRounds', GameRoundsSchema);
+const GameRound = mongoose.model('GameRound', GameRoundSchema);
 
-module.exports = GameRounds;
+module.exports = GameRound;

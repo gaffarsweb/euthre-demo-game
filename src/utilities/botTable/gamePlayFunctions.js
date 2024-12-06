@@ -5,16 +5,27 @@ const { getLeadSuit } = require("./getLeadSuit.js");
 const parseCards = require("./parseCards.js");
 const parseTrumCard = require("./parseTrumCard.js");
 const { shuffleCards } = require("./shuffleCards.js");
-const GameRounds = require("../../models/rounds.model.js");
-const GameHands = require("../../models/hands.model.js");
+const GameTrick = require("../../models/tricks.model.js");
+const GameRound = require("../../models/rounds.model.js");
 const { default: mongoose } = require("mongoose");
 const PlayingRoom = require("../../modules/playingroom/playingRoom.model.js");
 const checkIsTurn = require("./checkIsTrun.js");
+const { getTimePlus30Seconds } = require("../timerTable/setTimer.js");
+const checkIsTrumpTimeOut = require("../timerTable/checkIsTrumTimeOut.js");
+const { addTimePlayersisTrumpShow, addTimePlayersIsTurn } = require("../timerTable/addTimeInPlayers.js");
+const delay = require("./delay.js");
+const client = require("../redisClient.js");
+const checkIsTimeOutTurn = require("../timerTable/checkIsTimeOutTurn.js");
+const WalletTransactionService = require("../gameCoinTransactions.js");
+const GameDetails = require("../../modules/games/games.model.js");
+const Tournament = require("../../modules/tournament/tournament.model.js");
+let checkIsBotTurn;
 let checkIsBotTrumpSelection;
-
+let checkIsLastCardThrow;
 const loadModule = async () => {
     checkIsBotTrumpSelection = await import("./checkisTrumpSelection.js");
-    console.log('checkIsBotTrumpSelection', checkIsBotTrumpSelection);
+    checkIsBotTurn = await import("./checkisBotTurn.js");
+    checkIsLastCardThrow = await import("../checkIslastCard.js");
 };
 
 
@@ -30,15 +41,10 @@ class GameManager {
         let allPlayers = [this.findedRoom.teamOne[0], this.findedRoom.teamTwo[0], this.findedRoom.teamOne[1], this.findedRoom.teamTwo[1]];
         const parsedCards = await parseCards(this.findedRoom.playedCards);
         const trumpSuit = parseTrumCard(this.findedRoom.trumpSuit);
-        const leadSuit = getLeadSuit(this.findedRoom.playedCards[0].card);
-        console.log('trump shoietsss', trumpSuit)
+        const leadSuit = getLeadSuit(this.findedRoom.playedCards[0].card ? this.findedRoom.playedCards[0].card : this.findedRoom.playedCards[1].card);
         console.log('leadSuit', leadSuit)
-        // const TrickWinner = new findTrickWinner(trumpSuit.suit);
-        console.log('parsed cards in winner fun', parsedCards)
         const winner = findTrickWinner(parsedCards, trumpSuit.suit, leadSuit.suit);
-        console.log('winner', winner)
         lastTrickUpdate.winnerId = winner;
-        console.log('allPlayers', allPlayers)
         let updatedAllPlayers = await Promise.all(
             allPlayers.map(async (player) => {
                 player.isTrumpShow = false;
@@ -67,6 +73,8 @@ class GameManager {
             increasedWinningPoint: this.findedRoom.teamOnePoints?.increasedWinningPoint || 0,
             playerOneUserId: this.findedRoom.teamOne[0].UserId,
             playerTwoUserId: this.findedRoom.teamOne[1].UserId,
+            playerOneUserName: this.findedRoom.teamOne[0].userName,
+            playerTwoUserName: this.findedRoom.teamOne[1].userName,
             isWinner: false
         };
 
@@ -76,6 +84,8 @@ class GameManager {
             increasedWinningPoint: this.findedRoom.teamTwoPoints?.increasedWinningPoint || 0,
             playerOneUserId: this.findedRoom.teamTwo[0].UserId,
             playerTwoUserId: this.findedRoom.teamTwo[1].UserId,
+            playerOneUserName: this.findedRoom.teamTwo[0].userName,
+            playerTwoUserName: this.findedRoom.teamTwo[1].userName,
             isWinner: false
         };
 
@@ -91,8 +101,6 @@ class GameManager {
             })
         ]).then(() => {
             console.log("Total points calculated for both teams");
-            console.log("Team One Points:", teamOneTrikPoint);
-            console.log("Team Two Points:", teamTwoTrikPoint);
         }).catch((error) => {
             console.error("Error calculating points:", error);
         });
@@ -102,66 +110,107 @@ class GameManager {
             playedCards: this.findedRoom.playedCards,
             status: 'complete',
             roomId: this.findedRoom._id,
-            handId: this.findedRoom.handId,
+            roundId: this.findedRoom.handId,
             players: this.findedRoom.players,
             teamOne: this.findedRoom.teamOne,
             teamTwo: this.findedRoom.teamTwo,
             trumpSuit: this.findedRoom.trumpSuit,
-            isRoundWinnerId: winner,
+            isTrickWinnerId: winner,
         }
-        await GameRounds.create(payload);
+        await GameTrick.create(payload);
         this.findedRoom.playedCards = [];
 
         this.findedRoom.teamOnePoints.trikPoint = teamOneTrikPoint;
         this.findedRoom.teamTwoPoints.trikPoint = teamTwoTrikPoint;
-
-        let { userId, isPlayingAlone } = await checkIsTurn(this.findedRoom.teamOne, this.findedRoom.teamTwo);
+        const timeOut = await getTimePlus30Seconds();
+        let { userId, isPlayingAlone, teamOne, teamTwo } = await checkIsTurn(this.findedRoom.teamOne, this.findedRoom.teamTwo, 0, timeOut);
 
         if (this.findedRoom.playedCards.length == 0 && allTrue) {
             sendNextTurn = false;
-            let isHandWinner = '';
+            let isRoundWinner = '';
             let isRoundEnd = false;
-            if (this.findedRoom.teamOnePoints.trikPoint >= 4) {
-                isHandWinner = 'teamOne';
+            if (this.findedRoom.teamOnePoints.trikPoint === 5 && (this.findedRoom.teamOne[0].isPlayAlone || this.findedRoom.teamOne[1].isPlayAlone)) {
+                isRoundWinner = 'teamOne';
                 isRoundEnd = true;
                 lastTrickUpdate.teamOneTrikPoint = this.findedRoom.teamOnePoints.trikPoint;
-                this.findedRoom.teamOnePoints.winningPoint = this.findedRoom.teamOnePoints.winningPoint ? this.findedRoom.teamOnePoints.winningPoint + 2 : 2;
-                this.findedRoom.teamOnePoints.increasedWinningPoint = 2;
-                this.findedRoom.teamOnePoints.trikPoint = 0;
-            } else if (this.findedRoom.teamOnePoints.trikPoint == 3) {
-                isHandWinner = 'teamOne';
+                this.findedRoom.teamOnePoints.winningPoint = this.findedRoom.teamOnePoints.winningPoint ? this.findedRoom.teamOnePoints.winningPoint == 9 ? this.findedRoom.teamOnePoints.winningPoint + 1 : this.findedRoom.teamOnePoints.winningPoint == 8 ? this.findedRoom.teamOnePoints.winningPoint + 2 : this.findedRoom.teamOnePoints.winningPoint == 7 ? this.findedRoom.teamOnePoints.winningPoint + 3 : this.findedRoom.teamOnePoints.winningPoint + 4 : 4;
+                this.findedRoom.teamOnePoints.increasedWinningPoint = this.findedRoom.teamOnePoints.winningPoint == 9 ? 1 : this.findedRoom.teamOnePoints.winningPoint == 8 ? 2 : this.findedRoom.teamOnePoints.winningPoint == 7 ? 3 : 4;
+                // this.findedRoom.teamOnePoints.trikPoint = 0;
+            } else if (this.findedRoom.teamOnePoints.trikPoint === 5 && (this.findedRoom.teamOnePoints.playerOneUserId === this.findedRoom.trumpMaker || this.findedRoom.teamOnePoints.playerTwoUserId === this.findedRoom.trumpMaker)) {
+                isRoundWinner = 'teamOne';
+                isRoundEnd = true;
+                lastTrickUpdate.teamOneTrikPoint = this.findedRoom.teamOnePoints.trikPoint;
+                this.findedRoom.teamOnePoints.winningPoint = this.findedRoom.teamOnePoints.winningPoint ? this.findedRoom.teamOnePoints.winningPoint == 9 ? this.findedRoom.teamOnePoints.winningPoint + 1 : this.findedRoom.teamOnePoints.winningPoint + 2 : 2;
+                this.findedRoom.teamOnePoints.increasedWinningPoint = this.findedRoom.teamOnePoints.winningPoint == 9 ? 1 : 2;
+                // this.findedRoom.teamOnePoints.trikPoint = 0;
+            } else if ((this.findedRoom.teamOnePoints.trikPoint == 3 || this.findedRoom.teamOnePoints.trikPoint == 4) && (this.findedRoom.teamOnePoints.playerOneUserId === this.findedRoom.trumpMaker || this.findedRoom.teamOnePoints.playerTwoUserId === this.findedRoom.trumpMaker)) {
+                isRoundWinner = 'teamOne';
                 isRoundEnd = true;
                 lastTrickUpdate.teamOneTrikPoint = this.findedRoom.teamOnePoints.trikPoint;
                 this.findedRoom.teamOnePoints.winningPoint = this.findedRoom.teamOnePoints.winningPoint ? this.findedRoom.teamOnePoints.winningPoint + 1 : 1;
                 this.findedRoom.teamOnePoints.increasedWinningPoint = 1;
-                this.findedRoom.teamOnePoints.trikPoint = 0;
-            } else if (this.findedRoom.teamOnePoints.trikPoint < 3) {
+                // this.findedRoom.teamOnePoints.trikPoint = 0;
+            } else if (this.findedRoom.teamOnePoints.trikPoint < 3 && (this.findedRoom.teamOnePoints.playerOneUserId === this.findedRoom.trumpMaker || this.findedRoom.teamOnePoints.playerTwoUserId === this.findedRoom.trumpMaker)) {
                 isRoundEnd = true;
                 lastTrickUpdate.teamOneTrikPoint = this.findedRoom.teamOnePoints.trikPoint;
                 this.findedRoom.teamOnePoints.winningPoint = this.findedRoom.teamOnePoints.winningPoint ? this.findedRoom.teamOnePoints.winningPoint : 0;
                 this.findedRoom.teamOnePoints.increasedWinningPoint = 0;
-                this.findedRoom.teamOnePoints.trikPoint = 0;
+                // this.findedRoom.teamOnePoints.trikPoint = 0;
+
+
+                isRoundEnd = true;
+                isRoundWinner = 'teamTwo';
+                lastTrickUpdate.teamTwoTrikPoint = this.findedRoom.teamTwoPoints.trikPoint;
+                this.findedRoom.teamTwoPoints.winningPoint = this.findedRoom.teamTwoPoints.winningPoint ? this.findedRoom.teamTwoPoints.winningPoint == 9 ? this.findedRoom.teamTwoPoints.winningPoint + 1 : this.findedRoom.teamTwoPoints.winningPoint + 2 : 2;
+                this.findedRoom.teamTwoPoints.increasedWinningPoint = this.findedRoom.teamTwoPoints.winningPoint == 9 ? 1 : 2;
             }
-            if (this.findedRoom.teamTwoPoints.trikPoint >= 4) {
-                isHandWinner = 'teamTwo';
+
+
+            if (this.findedRoom.teamTwoPoints.trikPoint === 5 && (this.findedRoom.teamTwo[0].isPlayAlone || this.findedRoom.teamTwo[1].isPlayAlone)) {
+                isRoundWinner = 'teamTwo';
                 isRoundEnd = true;
                 lastTrickUpdate.teamTwoTrikPoint = this.findedRoom.teamTwoPoints.trikPoint;
-                this.findedRoom.teamTwoPoints.winningPoint = this.findedRoom.teamTwoPoints.winningPoint ? this.findedRoom.teamTwoPoints.winningPoint + 2 : 2;
-                this.findedRoom.teamTwoPoints.increasedWinningPoint = 2;
-                this.findedRoom.teamTwoPoints.trikPoint = 0;
-            } else if (this.findedRoom.teamTwoPoints.trikPoint == 3) {
-                isHandWinner = 'teamTwo';
+                this.findedRoom.teamTwoPoints.winningPoint = this.findedRoom.teamTwoPoints.winningPoint ? this.findedRoom.teamTwoPoints.winningPoint == 9 ? this.findedRoom.teamTwoPoints.winningPoint + 1 : this.findedRoom.teamTwoPoints.winningPoint == 8 ? this.findedRoom.teamTwoPoints.winningPoint + 2 : this.findedRoom.teamTwoPoints.winningPoint == 7 ? this.findedRoom.teamTwoPoints.winningPoint + 3 : this.findedRoom.teamTwoPoints.winningPoint + 4 : 4;
+                this.findedRoom.teamTwoPoints.increasedWinningPoint = this.findedRoom.teamTwoPoints.winningPoint == 9 ? 1 : this.findedRoom.teamTwoPoints.winningPoint == 8 ? 2 : this.findedRoom.teamTwoPoints.winningPoint == 7 ? 3 : 4;
+                // this.findedRoom.teamTwoPoints.trikPoint = 0;
+            } else if (this.findedRoom.teamTwoPoints.trikPoint === 5 && (this.findedRoom.teamTwoPoints.playerOneUserId === this.findedRoom.trumpMaker || this.findedRoom.teamTwoPoints.playerTwoUserId === this.findedRoom.trumpMaker)) {
+                isRoundWinner = 'teamTwo';
+                isRoundEnd = true;
+                lastTrickUpdate.teamTwoTrikPoint = this.findedRoom.teamTwoPoints.trikPoint;
+                this.findedRoom.teamTwoPoints.winningPoint = this.findedRoom.teamTwoPoints.winningPoint ? this.findedRoom.teamTwoPoints.winningPoint == 9 ? this.findedRoom.teamTwoPoints.winningPoint + 1 : this.findedRoom.teamTwoPoints.winningPoint + 2 : 2;
+                this.findedRoom.teamTwoPoints.increasedWinningPoint = this.findedRoom.teamTwoPoints.winningPoint == 9 ? 1 : 2;
+                // this.findedRoom.teamTwoPoints.trikPoint = 0;
+            } else if ((this.findedRoom.teamTwoPoints.trikPoint == 3 || this.findedRoom.teamTwoPoints.trikPoint == 4) && (this.findedRoom.teamTwoPoints.playerOneUserId === this.findedRoom.trumpMaker || this.findedRoom.teamTwoPoints.playerTwoUserId === this.findedRoom.trumpMaker)) {
+                isRoundWinner = 'teamTwo';
                 isRoundEnd = true;
                 lastTrickUpdate.teamTwoTrikPoint = this.findedRoom.teamTwoPoints.trikPoint;
                 this.findedRoom.teamTwoPoints.winningPoint = this.findedRoom.teamTwoPoints.winningPoint ? this.findedRoom.teamTwoPoints.winningPoint + 1 : 1;
                 this.findedRoom.teamTwoPoints.increasedWinningPoint = 1;
-                this.findedRoom.teamTwoPoints.trikPoint = 0;
-            } else if (this.findedRoom.teamTwoPoints.trikPoint < 3) {
+                // this.findedRoom.teamTwoPoints.trikPoint = 0;
+            } else if (this.findedRoom.teamTwoPoints.trikPoint < 3 && (this.findedRoom.teamTwoPoints.playerOneUserId === this.findedRoom.trumpMaker || this.findedRoom.teamTwoPoints.playerTwoUserId === this.findedRoom.trumpMaker)) {
                 isRoundEnd = true;
                 lastTrickUpdate.teamTwoTrikPoint = this.findedRoom.teamTwoPoints.trikPoint;
                 this.findedRoom.teamTwoPoints.winningPoint = this.findedRoom.teamTwoPoints.winningPoint ? this.findedRoom.teamTwoPoints.winningPoint : 0;
                 this.findedRoom.teamTwoPoints.increasedWinningPoint = 0;
-                this.findedRoom.teamTwoPoints.trikPoint = 0;
+                // this.findedRoom.teamTwoPoints.trikPoint = 0;
+
+
+                isRoundWinner = 'teamOne';
+                isRoundEnd = true;
+                lastTrickUpdate.teamOneTrikPoint = this.findedRoom.teamOnePoints.trikPoint;
+                this.findedRoom.teamOnePoints.winningPoint = this.findedRoom.teamOnePoints.winningPoint ? this.findedRoom.teamOnePoints.winningPoint == 9 ? this.findedRoom.teamOnePoints.winningPoint + 1 : this.findedRoom.teamOnePoints.winningPoint + 2 : 2;
+                this.findedRoom.teamOnePoints.increasedWinningPoint = this.findedRoom.teamOnePoints.winningPoint == 9 ? 1 : 2;
+            }
+            const removeCards = (team) => {
+                return team.map(({ cards, ...rest }) => rest);
+            };
+            const payload = {
+                teamOne: removeCards(this.findedRoom.teamOne),
+                teamTwo: removeCards(this.findedRoom.teamTwo),
+                teamOnePoints: this.findedRoom.teamOnePoints,
+                teamTwoPoints: this.findedRoom.teamTwoPoints,
+                status: 'complete',
+                isRoundWinner,
             }
             this.findedRoom.teamOne.forEach((player) => {
                 player.lastPoints = player.points;
@@ -172,34 +221,110 @@ class GameManager {
                 player.lastPoints = player.points;
                 player.points = 0;
             });
-            const payload = {
-                teamOne: this.findedRoom.teamOne,
-                teamTwo: this.findedRoom.teamTwo,
-                teamOnePoints: this.findedRoom.teamOnePoints,
-                teamTwoPoints: this.findedRoom.teamTwoPoints,
-                status: 'complete',
-                isHandWinner,
 
-
-            }
-            console.log('last pointes of the team ', this.findedRoom)
-
-            await GameHands.findOneAndUpdate(
+            await GameRound.findOneAndUpdate(
                 { _id: new mongoose.Types.ObjectId(this.findedRoom.handId) },
                 { $set: payload },
                 { new: true }
             );
             if (this.findedRoom.teamOnePoints.winningPoint >= 10) {
+                await delay(1000);
                 this.findedRoom.teamOnePoints.isWinner = true;
                 this.findedRoom.status = 'complete';
                 this.findedRoom.isWinner = 'teamOne';
+                this.findedRoom.teamOne[0].isTurn = false;
+                this.findedRoom.teamOne[0].isTrumpShow = false;
+                this.findedRoom.teamOne[0].timeOut = '';
+                this.findedRoom.teamOne[1].isTurn = false;
+                this.findedRoom.teamOne[1].isTrumpShow = false;
+                this.findedRoom.teamOne[1].timeOut = '';
+                this.findedRoom.teamTwo[0].isTurn = false;
+                this.findedRoom.teamTwo[0].isTrumpShow = false;
+                this.findedRoom.teamTwo[0].timeOut = '';
+                this.findedRoom.teamTwo[1].isTurn = false;
+                this.findedRoom.teamTwo[1].isTrumpShow = false;
+                this.findedRoom.teamTwo[1].timeOut = '';
+
+                let winningAmount = 1000;
+                let entryAmount = 1000;
+                if (this.findedRoom?.roomType === 'tournament' && this.findedRoom?.tournamentId) {
+                    const tournamentDetails = await Tournament.findOne({ _id: new mongoose.Types.ObjectId(this.findedRoom?.tournamentId) })
+
+                    if (tournamentDetails?.registeredUsers) {
+                        tournamentDetails.remainingMatches = tournamentDetails?.remainingMatches - 1
+                        for (let i = 0; i < tournamentDetails?.registeredUsers.length; i++) {
+                            if (!tournamentDetails?.registeredUsers[i].lost) {
+                                if (tournamentDetails.registeredUsers[i].descopeId === this.findedRoom.teamOne[0]) {
+                                    tournamentDetails.registeredUsers[i].isWinner = true;
+                                    tournamentDetails.registeredUsers[i].playedMatch = tournamentDetails?.registeredUsers[i].playedMatch + 1;
+                                } else if (tournamentDetails.registeredUsers[i].descopeId === this.findedRoom.teamOne[1]) {
+                                    tournamentDetails.registeredUsers[i].isWinner = true;
+                                    tournamentDetails.registeredUsers[i].playedMatch = tournamentDetails?.registeredUsers[i].playedMatch + 1;
+                                } else if (tournamentDetails.registeredUsers[i].descopeId === this.findedRoom.teamTwo[0]) {
+                                    tournamentDetails.registeredUsers[i].isWinner = false;
+                                    tournamentDetails.registeredUsers[i].lost = true;
+                                    tournamentDetails.registeredUsers[i].playedMatch = tournamentDetails?.registeredUsers[i].playedMatch + 1;
+                                } else if (tournamentDetails?.registeredUsers[i]?.descopeId === this.findedRoom.teamTwo[1]) {
+                                    tournamentDetails.registeredUsers[i].isWinner = false;
+                                    tournamentDetails.registeredUsers[i].lost = true;
+                                    tournamentDetails.registeredUsers[i].playedMatch = tournamentDetails?.registeredUsers[i].playedMatch + 1;
+                                }
+                            }
+                        }
+                        const filteredTournamentUsers = tournamentDetails.registeredUsers.filter(user => user.isWinner);
+
+                        if (filteredTournamentUsers.length === 2) {
+                            // Add your logic here for when there are exactly 2 winners
+                            if (this.findedRoom?.gameId) {
+                                let gameDetails = await GameDetails.findOne({ _id: new mongoose.Types.ObjectId(this.findedRoom?.gameId) });
+                                winningAmount = gameDetails?.prize
+                                entryAmount = gameDetails?.entry
+                            }
+        
+                            const deductionTime = new WalletTransactionService(this.findedRoom.teamOne, this.findedRoom.teamTwo, winningAmount)
+                            const updatedTeam = await deductionTime.addWinningprize(winningAmount, 'teamOne', 'teamTwo');
+                            this.findedRoom.teamOne = updatedTeam.teamOne;
+                            this.findedRoom.teamTwo = updatedTeam.teamTwo;
+                        }
+                        console.timeEnd("loopTime"); // End the timer and log the elapsed time with the same label "loopTime"
+                        await tournamentDetails.save();
+
+                    }
+
+                } else {
+                    if (this.findedRoom?.gameId) {
+                        let gameDetails = await GameDetails.findOne({ _id: new mongoose.Types.ObjectId(this.findedRoom?.gameId) });
+                        winningAmount = gameDetails?.prize
+                        entryAmount = gameDetails?.entry
+                    }
+
+                    const deductionTime = new WalletTransactionService(this.findedRoom.teamOne, this.findedRoom.teamTwo, winningAmount)
+                    const updatedTeam = await deductionTime.addWinningprize(winningAmount, 'teamOne', 'teamTwo');
+                    this.findedRoom.teamOne = updatedTeam.teamOne;
+                    this.findedRoom.teamTwo = updatedTeam.teamTwo;
+                }
+
+
                 let RoundEndResult = {
-                    isRoundWinner: isHandWinner,
+                    isRoundWinner: isRoundWinner,
                     teamOnePoints: this.findedRoom.teamOnePoints,
                     teamTwoPoints: this.findedRoom.teamTwoPoints,
+                    timerCount: 4
+                }
+                let GameEndResult = {
+                    isRoundWinner: isRoundWinner,
+                    winningAmount,
+                    teamOnePoints: this.findedRoom.teamOnePoints,
+                    teamTwoPoints: this.findedRoom.teamTwoPoints,
+                    timerCount: 4,
+                    entryAmount
                 }
                 if (isRoundEnd) {
                     this.io.to(this.findedRoom._id.toString()).emit('RoundEndResult', { roomData: RoundEndResult });
+                    this.io.to(this.findedRoom._id.toString()).emit('GameEndResult', { roomData: GameEndResult });
+                    this.findedRoom.teamTwoPoints.trikPoint = 0;
+                    this.findedRoom.teamOnePoints.trikPoint = 0;
+                    // await delay(5000);
                 }
                 let trickEndResult = {
                     teamOnePoints: this.findedRoom.teamOnePoints,
@@ -207,19 +332,120 @@ class GameManager {
                     trickWinnerUserId: winner
                 }
                 this.io.to(this.findedRoom._id.toString()).emit('TrickEndResult', { roomData: trickEndResult });
+                const room = this.io.sockets.adapter.rooms.get(this.findedRoom._id.toString());
+
+                if (room) {
+                    // Iterate over each socket in the room
+                    for (const socketId of room) {
+                        const socket = this.io.sockets.sockets.get(socketId);
+                        if (socket) {
+                            // Disconnect the socket
+                            socket.leave(this.findedRoom._id.toString());
+                            // socket.disconnect(true);
+                        }
+                    }
+                }
+
                 return { udpatedFindedRooom: this.findedRoom, lastTrickUpdate }
             }
             if (this.findedRoom.teamTwoPoints.winningPoint >= 10) {
+                await delay(1000);
                 this.findedRoom.teamTwoPoints.isWinner = true;
                 this.findedRoom.status = 'complete';
                 this.findedRoom.isWinner = 'teamTwo';
+                this.findedRoom.teamOne[0].isTurn = false;
+                this.findedRoom.teamOne[0].isTrumpShow = false;
+                this.findedRoom.teamOne[0].timeOut = '';
+                this.findedRoom.teamOne[1].isTurn = false;
+                this.findedRoom.teamOne[1].isTrumpShow = false;
+                this.findedRoom.teamOne[1].timeOut = '';
+                this.findedRoom.teamTwo[0].isTurn = false;
+                this.findedRoom.teamTwo[0].isTrumpShow = false;
+                this.findedRoom.teamTwo[0].timeOut = '';
+                this.findedRoom.teamTwo[1].isTurn = false;
+                this.findedRoom.teamTwo[1].isTrumpShow = false;
+                this.findedRoom.teamTwo[1].timeOut = '';
+
+                let winningAmount = 1000;
+                let entryAmount = 1000;
+
+                if (this.findedRoom?.roomType === 'tournament' && this.findedRoom?.tournamentId) {
+                    const tournamentDetails = await Tournament.findOne({ _id: new mongoose.Types.ObjectId(this.findedRoom?.tournamentId) })
+
+                    if (tournamentDetails?.registeredUsers) {
+                        tournamentDetails.remainingMatches = tournamentDetails?.remainingMatches - 1;
+                        for (let i = 0; i < tournamentDetails?.registeredUsers.length; i++) {
+                            if (!tournamentDetails?.registeredUsers[i].lost) {
+                                if (tournamentDetails.registeredUsers[i].descopeId === this.findedRoom.teamTwo[0]) {
+                                    tournamentDetails.registeredUsers[i].isWinner = true;
+                                    tournamentDetails.registeredUsers[i].playedMatch = tournamentDetails?.registeredUsers[i].playedMatch + 1;
+                                } else if (tournamentDetails.registeredUsers[i].descopeId === this.findedRoom.teamTwo[1]) {
+                                    tournamentDetails.registeredUsers[i].isWinner = true;
+                                    tournamentDetails.registeredUsers[i].playedMatch = tournamentDetails?.registeredUsers[i].playedMatch + 1;
+                                } else if (tournamentDetails.registeredUsers[i].descopeId === this.findedRoom.teamOne[0]) {
+                                    tournamentDetails.registeredUsers[i].isWinner = false;
+                                    tournamentDetails.registeredUsers[i].lost = true;
+                                    tournamentDetails.registeredUsers[i].playedMatch = tournamentDetails?.registeredUsers[i].playedMatch + 1;
+                                } else if (tournamentDetails?.registeredUsers[i]?.descopeId === this.findedRoom.teamOne[1]) {
+                                    tournamentDetails.registeredUsers[i].isWinner = false;
+                                    tournamentDetails.registeredUsers[i].lost = true;
+                                    tournamentDetails.registeredUsers[i].playedMatch = tournamentDetails?.registeredUsers[i].playedMatch + 1;
+                                }
+                            }
+                        }
+                        const filteredTournamentUsers = tournamentDetails.registeredUsers.filter(user => user.isWinner);
+
+                        if (filteredTournamentUsers.length === 2) {
+                            // Add your logic here for when there are exactly 2 winners
+                            if (this.findedRoom?.gameId) {
+                                let gameDetails = await GameDetails.findOne({ _id: new mongoose.Types.ObjectId(this.findedRoom?.gameId) });
+                                winningAmount = gameDetails?.prize
+                                entryAmount = gameDetails?.entry
+                            }
+                            const deductionTime = new WalletTransactionService(this.findedRoom.teamOne, this.findedRoom.teamTwo, winningAmount)
+                            const updatedTeam = await deductionTime.addWinningprize(winningAmount, 'teamTwo', 'teamOne');
+                            this.findedRoom.teamOne = updatedTeam.teamOne;
+                            this.findedRoom.teamTwo = updatedTeam.teamTwo;
+                            console.log("There are exactly 2 winners.");
+                        }
+                        console.timeEnd("loopTime"); // End the timer and log the elapsed time with the same label "loopTime"
+                        await tournamentDetails.save();
+
+                    }
+
+                } else {
+                    if (this.findedRoom?.gameId) {
+                        let gameDetails = await GameDetails.findOne({ _id: new mongoose.Types.ObjectId(this.findedRoom?.gameId) });
+                        winningAmount = gameDetails?.prize
+                        entryAmount = gameDetails?.entry
+                    }
+                    const deductionTime = new WalletTransactionService(this.findedRoom.teamOne, this.findedRoom.teamTwo, winningAmount)
+                    const updatedTeam = await deductionTime.addWinningprize(winningAmount, 'teamTwo', 'teamOne');
+                    this.findedRoom.teamOne = updatedTeam.teamOne;
+                    this.findedRoom.teamTwo = updatedTeam.teamTwo;
+                }
+
+
                 let RoundEndResult = {
-                    isRoundWinner: isHandWinner,
+                    isRoundWinner: isRoundWinner,
                     teamOnePoints: this.findedRoom.teamOnePoints,
                     teamTwoPoints: this.findedRoom.teamTwoPoints,
+                    timerCount: 4
+                }
+                let GameEndResult = {
+                    isRoundWinner: isRoundWinner,
+                    winningAmount,
+                    teamOnePoints: this.findedRoom.teamOnePoints,
+                    teamTwoPoints: this.findedRoom.teamTwoPoints,
+                    timerCount: 4,
+                    entryAmount
                 }
                 if (isRoundEnd) {
                     this.io.to(this.findedRoom._id.toString()).emit('RoundEndResult', { roomData: RoundEndResult });
+                    this.io.to(this.findedRoom._id.toString()).emit('GameEndResult', { roomData: GameEndResult });
+                    this.findedRoom.teamTwoPoints.trikPoint = 0;
+                    this.findedRoom.teamOnePoints.trikPoint = 0;
+                    // await delay(5000);
                 }
                 let trickEndResult = {
                     teamOnePoints: this.findedRoom.teamOnePoints,
@@ -227,21 +453,37 @@ class GameManager {
                     trickWinnerUserId: winner
                 }
                 this.io.to(this.findedRoom._id.toString()).emit('TrickEndResult', { roomData: trickEndResult });
+
+                const room = this.io.sockets.adapter.rooms.get(this.findedRoom._id.toString());
+
+                if (room) {
+                    // Iterate over each socket in the room
+                    for (const socketId of room) {
+                        const socket = this.io.sockets.sockets.get(socketId);
+                        if (socket) {
+                            // Disconnect the socket
+                            socket.leave(this.findedRoom._id.toString());
+                            // socket.disconnect(true);
+                        }
+                    }
+                }
+
                 return { udpatedFindedRooom: this.findedRoom, lastTrickUpdate };
             }
 
             const { teamOne, teamTwo } = await createDealer(this.findedRoom.teamOne, this.findedRoom.teamTwo);
 
-            console.log('dealoer created')
             await this.updatePlayerCards(teamOne, teamTwo, allTrue);
-            console.log('udpatedFindedRooom', this.findedRoom)
 
             this.findedRoom.isTrumpSelected = false;
             this.findedRoom.isStarted = false;
             this.findedRoom.status = 'playing';
 
             let { dealerId, players } = await this.getPlayers(this.findedRoom);
-            let getUpdatedTurnPlayer = await checkIsTurn(this.findedRoom.teamOne, this.findedRoom.teamTwo);
+            const timeOut = await getTimePlus30Seconds();
+            let getUpdatedTurnPlayer = await checkIsTurn(this.findedRoom.teamOne, this.findedRoom.teamTwo, 0, timeOut);
+            this.findedRoom.teamOne = getUpdatedTurnPlayer.teamOne;
+            this.findedRoom.teamTwo = getUpdatedTurnPlayer.teamTwo;
             userId = getUpdatedTurnPlayer.userId
             isPlayingAlone = getUpdatedTurnPlayer.isPlayingAlone
             let InitializeRound = {
@@ -250,18 +492,29 @@ class GameManager {
                 dealerId
             }
             let RoundEndResult = {
-                isRoundWinner: isHandWinner,
+                isRoundWinner: isRoundWinner,
                 teamOnePoints: this.findedRoom.teamOnePoints,
                 teamTwoPoints: this.findedRoom.teamTwoPoints,
+                timerCount: 4
             }
+
             let next = {
                 nextTurnId: userId,
-                isPlayingAlone: isPlayingAlone
+                isPlayingAlone: isPlayingAlone,
+                timeOut, timerCount: 30,
+                leadSuit: this.findedRoom.playedCards.length > 0 && this.findedRoom.playedCards[0].card ? this.findedRoom.playedCards[0].card : '',
+                trumpSuit: this.findedRoom.trumpSuit
+
             }
+            const addedTimeOut = await addTimePlayersisTrumpShow(this.findedRoom.teamOne, this.findedRoom.teamTwo, userId, timeOut)
+            this.findedRoom.teamOne = addedTimeOut.teamOne;
+            this.findedRoom.teamTwo = addedTimeOut.teamTwo;
             let NotifyTrumpSelectorPlayer = {
                 userId: userId,
                 trumpRound: 0,
-                disabledSuite: ''
+                disabledSuite: '',
+                timeOut,
+                timerCount: 30
             }
             let trickEndResult = {
                 teamOnePoints: this.findedRoom.teamOnePoints,
@@ -270,19 +523,42 @@ class GameManager {
             }
 
             if (isRoundEnd) {
+                await delay(1000);
                 this.io.to(this.findedRoom._id.toString()).emit('TrickEndResult', { roomData: trickEndResult });
                 this.io.to(this.findedRoom._id.toString()).emit('RoundEndResult', { roomData: RoundEndResult });
+                this.findedRoom.teamTwoPoints.trikPoint = 0;
+                this.findedRoom.teamOnePoints.trikPoint = 0;
+                await delay(5000);
                 this.io.to(this.findedRoom._id.toString()).emit('InitializeRound', { roomData: InitializeRound });
+                await delay(5000);
                 this.io.to(this.findedRoom._id.toString()).emit('NotifyTrumpSelectorPlayer', { roomData: NotifyTrumpSelectorPlayer });
                 let updatedRoom = this.findedRoom;
                 // let updatedRoom = await checkIsBotTrumpSelection(this.findedRoom, this.io, this.findedRoom._id.toString());
-                loadModule().then(() => {
-                    updatedRoom = checkIsBotTrumpSelection.default(this.findedRoom, this.io, this.findedRoom._id.toString())
-                    console.log('in loadmodulesss')
+                loadModule().then(async () => {
+                    updatedRoom = await checkIsBotTrumpSelection.default(this.findedRoom, this.io, this.findedRoom._id.toString())
                 });
-                this.findedRoom = updatedRoom
+                await client.json.set(this.findedRoom._id.toString(), '$', updatedRoom);
+
+                setTimeout(async () => {
+                    await checkIsTrumpTimeOut(updatedRoom, this.io, this.findedRoom._id.toString());
+                    this.findedRoom = updatedRoom
+
+                }, 31000); // 40 seconds timer
+
             } else {
                 this.io.to(this.findedRoom._id.toString()).emit('NextTurn', { roomData: next });
+                const addedTimeOut = await addTimePlayersIsTurn(this.findedRoom.teamOne, this.findedRoom.teamTwo, userId, timeOut)
+                this.findedRoom.teamOne = addedTimeOut.teamOne;
+                this.findedRoom.teamTwo = addedTimeOut.teamTwo;
+
+                loadModule().then(async () => {
+                    this.findedRoom = await checkIsBotTurn.default(this.findedRoom, this.io, this.findedRoom._id.toString())
+                    this.findedRoom = await checkIsLastCardThrow.default(this.findedRoom, this.io, this.findedRoom._id.toString(), userId)
+                });
+                await client.json.set(this.findedRoom._id.toString(), '$', this.findedRoom);
+                setTimeout(async () => {
+                    await checkIsTimeOutTurn(this.findedRoom, this.io, this.findedRoom._id.toString(), userId)
+                }, 31000); // 40 seconds timer
             }
 
             const payloads = {
@@ -291,9 +567,8 @@ class GameManager {
                 teamTwo: this.findedRoom.teamTwo,
             }
 
-            const handCreated = await GameHands.create(payloads);
+            const handCreated = await GameRound.create(payloads);
             if (handCreated) {
-                console.log('handcreated', handCreated)
 
                 this.findedRoom.handId = handCreated._id
             }
@@ -306,14 +581,37 @@ class GameManager {
             teamTwoPoints: this.findedRoom.teamTwoPoints,
             trickWinnerUserId: winner
         }
+
+
         let next = {
             nextTurnId: userId,
-            isPlayingAlone: isPlayingAlone
+            isPlayingAlone: isPlayingAlone,
+            timeOut, timerCount: 30,
+            leadSuit: this.findedRoom.playedCards.length > 0 && this.findedRoom.playedCards[0].card ? this.findedRoom.playedCards[0].card : '',
+            trumpSuit: this.findedRoom.trumpSuit
+
         }
         //chec
         if (sendNextTurn) {
+            await delay(1000);
+            this.findedRoom.teamOne = teamOne;
+            this.findedRoom.teamTwo = teamTwo;
+
+
             this.io.to(this.findedRoom._id.toString()).emit('TrickEndResult', { roomData: trickEndResult });
             this.io.to(this.findedRoom._id.toString()).emit('NextTurn', { roomData: next });
+            const addedTimeOut = await addTimePlayersIsTurn(this.findedRoom.teamOne, this.findedRoom.teamTwo, userId, timeOut)
+            this.findedRoom.teamOne = addedTimeOut.teamOne;
+            this.findedRoom.teamTwo = addedTimeOut.teamTwo;
+
+            loadModule().then(async () => {
+                this.findedRoom = await checkIsBotTurn.default(this.findedRoom, this.io, this.findedRoom._id.toString())
+                this.findedRoom = await checkIsLastCardThrow.default(this.findedRoom, this.io, this.findedRoom._id.toString(), userId)
+            });
+            await client.json.set(this.findedRoom._id.toString(), '$', this.findedRoom);
+            setTimeout(async () => {
+                await checkIsTimeOutTurn(this.findedRoom, this.io, this.findedRoom._id.toString(), userId)
+            }, 31000); // 40 seconds timer
         }
 
         return { udpatedFindedRooom: this.findedRoom, lastTrickUpdate };
@@ -338,7 +636,6 @@ class GameManager {
 
             if (!matchedPlayer || matchedPlayer == null) {
                 findedRoom.teamTwo.find((e, index) => {
-                    console.log('is in team two  ', index)
                     if (e.isDealer) {
                         dealerId = e.UserId;
                     }

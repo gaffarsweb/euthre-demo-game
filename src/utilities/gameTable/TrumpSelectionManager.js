@@ -8,6 +8,10 @@ const checkIsTurn = require('./checkIsTrun');
 const checkIsBotDealer = require('../botTable/checkIsBotDealer');
 const checkIsBotTurn = require('../botTable/checkisBotTurn');
 const checkIsBotTrumpSelectionForPlayAlone = require('../botTable/checkIsPlayAlonSelectionWithTrumpBox');
+const { getTimePlus30Seconds } = require('../timerTable/setTimer');
+const { addTimePlayersIsDealer, addTimePlayersSelectPlayAlone } = require('../timerTable/addTimeInPlayers');
+const checkIsDealerTimeOut = require('../timerTable/checkIsDealerTimeOut');
+const checkIsPlayAloneTimeOut = require('../timerTable/checkIsPlayAloneTimeOut');
 
 class TrumpSelectionManager {
     constructor(io, client, socket) {
@@ -25,7 +29,6 @@ class TrumpSelectionManager {
     }
 
     async handleCallSuiteSelection(e) {
-        console.log("Round 2")
         let data = e;
         let action = 2;
 
@@ -38,11 +41,9 @@ class TrumpSelectionManager {
         }
 
         const { roomId, card: selectedCard } = data;
-        console.log("your selected card: ", selectedCard);
         if (roomId) {
-            let findedRoom = await this.client.get(roomId);
+            let findedRoom = await this.client.json.get(roomId);
 
-            console.log('passtrumpbox client', findedRoom);
             if (typeof findedRoom === 'string') {
                 findedRoom = JSON.parse(findedRoom);
             }
@@ -56,14 +57,13 @@ class TrumpSelectionManager {
             findedRoom.teamTwo = teamTwo;
 
 
-            console.log('ged userid', userId)
 
             preTrupRound = findedRoom.trumpRound
             findedRoom.trumpSuit = selectedCard;
             findedRoom.trumpRound = 0;
             findedRoom.isTrumpSelected = true;
             findedRoom.isStarted = true;
-            console.log("finded trump: ", findedRoom.trumpSuit)
+            findedRoom.trumpMaker = userId;
 
             const clients = this.io.sockets.adapter.rooms.get(roomId);
             console.log(clients ? 'Clients in room:' : 'No clients in the room', [...(clients || [])]);
@@ -79,32 +79,47 @@ class TrumpSelectionManager {
             this.io.to(roomId).emit('OrderPassCall', { OrderUpdate: orderPassCell });
             this.io.to(roomId).emit('roomUpdates', { roomData: findedRoom });
             this.io.to(roomId).emit('lastAction', { action, userId });
+            const timeOut = await getTimePlus30Seconds();
             // let next = {
             //     nextTurnId: isTurnData.userId,
             //     isPlayingAlone: isTurnData.isPlayingAlone
             // }
             // this.io.to(roomId).emit('NextTurn', { roomData: next });
             let askteamPlayerId = {
-                AskTeamOrAloneId: userId
+                AskTeamOrAloneId: userId,
+                timeOut,
+                timerCount: 27
             }
             this.io.to(roomId).emit('AskTeamOrAlone', { roomData: askteamPlayerId });
 
+            const UpdatedDealer = await addTimePlayersSelectPlayAlone(findedRoom.teamOne, findedRoom.teamTwo, userId, timeOut);
+            findedRoom.teamOne = UpdatedDealer.teamOne;
+            findedRoom.teamTwo = UpdatedDealer.teamTwo
+            await this.client.json.set(roomId, '$', findedRoom);
+            setTimeout(async () => {
+                console.log('in after ask team or alo')
+                await checkIsPlayAloneTimeOut(findedRoom, roomId, userId, this.io);
+                // let updatedRoom = await checkIsPlayAloneTimeOut(findedRoom, roomId, userId, this.io);
+                // console.log('after ask team or alo timer Updated', updatedRoom)
+                // // await this.client.json.set(findedRoom._id.toString(), '$', updatedRoom);
+                // findedRoom = updatedRoom
+
+            }, 31000); // 40 seconds timer
+
             let PrevTrumpshowUserId;
-        for (let i = 0; i < findedRoom.teamOne.length; i++) {
-            if(findedRoom.teamOne[i].isTrumpShow) PrevTrumpshowUserId = findedRoom.teamOne[i].UserId;
-            findedRoom.teamOne[i].isTrumpShow = false;
-        }
-        for (let i = 0; i < findedRoom.teamTwo.length; i++) {
-            if(findedRoom.teamTwo[i].isTrumpShow) PrevTrumpshowUserId = findedRoom.teamTwo[i].UserId;
-            findedRoom.teamTwo[i].isTrumpShow = false;
-        }
+            for (let i = 0; i < findedRoom.teamOne.length; i++) {
+                if (findedRoom.teamOne[i].isTrumpShow) PrevTrumpshowUserId = findedRoom.teamOne[i].UserId;
+                findedRoom.teamOne[i].isTrumpShow = false;
+            }
+            for (let i = 0; i < findedRoom.teamTwo.length; i++) {
+                if (findedRoom.teamTwo[i].isTrumpShow) PrevTrumpshowUserId = findedRoom.teamTwo[i].UserId;
+                findedRoom.teamTwo[i].isTrumpShow = false;
+            }
 
-            console.log("action: ", action, userId);
-            let updateClient = await this.client.set(roomId, JSON.stringify(findedRoom));
+            let updateClient = await this.client.json.set(roomId, '$', findedRoom);
             const updatedRoom = await checkIsBotTrumpSelectionForPlayAlone(findedRoom, roomId, PrevTrumpshowUserId, this.io)
-            updateClient = await this.client.set(roomId, JSON.stringify(updatedRoom));
+            updateClient = await this.client.json.set(roomId, '$', updatedRoom);
 
-            console.log('Update client status:', updateClient);
 
             if (updateClient !== 'OK') {
                 await PlayingRoom.findOneAndUpdate(
@@ -113,12 +128,10 @@ class TrumpSelectionManager {
                     { new: true }
                 );
             }
-            console.log('Emitted updates');
         }
     }
 
     async handleOrderUp(e) {
-        console.log("Round 1")
         let data = e;
         let action = 1;
         if (typeof e === 'string') {
@@ -132,13 +145,11 @@ class TrumpSelectionManager {
         const { roomId, selectedCard } = data;
         let selectedCardSuit = selectedCard;
         if (selectedCard.length >= 2) {
-            console.log('inn if leng condition')
             selectedCardSuit = getTrumpSuitFromSelectBTN(selectedCard)
         }
 
 
-        let findedRoom = await this.client.get(roomId);
-        console.log('passtrumpbox client', findedRoom);
+        let findedRoom = await this.client.json.get(roomId);
         if (typeof findedRoom === 'string') {
             findedRoom = JSON.parse(findedRoom);
         }
@@ -147,7 +158,6 @@ class TrumpSelectionManager {
         }
 
         const { teamOnes, teamTwos, dealerId } = await reciveTrumpSelectedCard(findedRoom.teamOne, findedRoom.teamTwo, selectedCard);
-        console.log('card recived')
         if (roomId) {
             let preTrupRound = 0;
             let { teamOne, teamTwo, trumpRound, userId } = await cehckTrumShow(
@@ -157,7 +167,6 @@ class TrumpSelectionManager {
             );
 
 
-            console.log('ged userid', userId)
             preTrupRound = findedRoom.trumpRound;
             findedRoom.teamOne = teamOne;
             findedRoom.teamTwo = teamTwo;
@@ -165,6 +174,7 @@ class TrumpSelectionManager {
             findedRoom.isTrumpSelected = true;
             findedRoom.trumpRound = 0;
             findedRoom.isStarted = true;
+            findedRoom.trumpMaker = userId;
 
             const clients = this.io.sockets.adapter.rooms.get(roomId);
             console.log(clients ? 'Clients in room:' : 'No clients in the room', [...(clients || [])]);
@@ -179,16 +189,37 @@ class TrumpSelectionManager {
             this.io.to(roomId).emit('OrderPassCall', { OrderUpdate: orderPassCell });
             this.io.to(roomId).emit('roomUpdates', { roomData: findedRoom });
             this.io.to(roomId).emit('lastAction', { action, userId });
-            this.io.to(roomId).emit('NotifyDealerRemove', { roomData: dealerId });
+            const timeOut = await getTimePlus30Seconds();
+            this.io.to(roomId).emit('NotifyDealerRemove', { roomData: { dealerId, timeOut, timerCount: 27 } });
+
+
+            const UpdatedDealer = await addTimePlayersIsDealer(findedRoom.teamOne, findedRoom.teamTwo, dealerId, timeOut);
+            findedRoom.teamOne = UpdatedDealer.teamOne;
+            findedRoom.teamTwo = UpdatedDealer.teamTwo
+            // let next = {
+            //     nextTurnId: isTurnData.userId,
+            //     isPlayingAlone: isTurnData.isPlayingAlone
+            // }
+            // io.to(roomId).emit('NextTurn', { roomData: next });
+
+            await this.client.json.set(roomId, '$', findedRoom);
+            setTimeout(async () => {
+                console.log('in dealer timer')
+                await checkIsDealerTimeOut(findedRoom, roomId, this.io);
+                // let updatedRoom = await checkIsDealerTimeOut(findedRoom, roomId, this.io);
+                // console.log('dealer timer Updated', updatedRoom)
+                // await this.client.json.set(findedRoom._id.toString(), '$', updatedRoom);
+                // findedRoom = updatedRoom
+
+            }, 31000); // 40 seconds timer
             // let next = {
             //     nextTurnId: isTurnData.userId,
             //     isPlayingAlone: isTurnData.isPlayingAlone
             // }
             // this.io.to(roomId).emit('NextTurn', { roomData: next });
-            await this.client.set(roomId, JSON.stringify(findedRoom));
+            await this.client.json.set(roomId, '$', findedRoom);
             const updatedRom = await checkIsBotDealer(findedRoom, roomId, this.io);
-            const updateClient = await this.client.set(roomId, JSON.stringify(updatedRom));
-            console.log('Update client status:', updateClient);
+            const updateClient = await this.client.json.set(roomId, '$', updatedRom);
 
             if (updateClient !== 'OK') {
                 await PlayingRoom.findOneAndUpdate(
@@ -197,12 +228,10 @@ class TrumpSelectionManager {
                     { new: true }
                 );
             }
-            console.log('Emitted updates');
         }
     }
 
     async handleRemoveExtraCard(e) {
-        console.log("Remove Card Called")
         let data = e;
         let action = 3;
         if (typeof e === 'string') {
@@ -215,8 +244,7 @@ class TrumpSelectionManager {
 
         const { roomId, card: removedCardSelected } = data;
 
-        let findedRoom = await this.client.get(roomId);
-        console.log('passtrumpbox client', findedRoom);
+        let findedRoom = await this.client.json.get(roomId);
         if (typeof findedRoom === 'string') {
             findedRoom = JSON.parse(findedRoom);
         }
@@ -228,11 +256,11 @@ class TrumpSelectionManager {
         findedRoom.teamOne = teamOne;
         findedRoom.teamTwo = teamTwo;
         findedRoom.isStarted = true;
-        console.log('ged userid', userId)
         let removedCardOBJ = {
             action,
             removedCard: removedCardSelected,
-            userId
+            userId,
+            trumpSuit: findedRoom.trumpSuit
         }
 
         if (roomId) {
@@ -244,10 +272,28 @@ class TrumpSelectionManager {
             this.io.to(roomId).emit('RemovedCard', { roomData: removedCardOBJ });
             this.io.to(roomId).emit('roomUpdates', { roomData: findedRoom });
             this.io.to(roomId).emit('lastAction', { action, userId });
+            const timeOut = await getTimePlus30Seconds();
+
             let askteamPlayerId = {
-                AskTeamOrAloneId: AskTeamOrAloneId
+                AskTeamOrAloneId: AskTeamOrAloneId,
+                timeOut,
+                timerCount: 27
             }
             this.io.to(roomId).emit('AskTeamOrAlone', { roomData: askteamPlayerId });
+
+            const UpdatedDealer = await addTimePlayersSelectPlayAlone(findedRoom.teamOne, findedRoom.teamTwo, AskTeamOrAloneId, timeOut);
+            findedRoom.teamOne = UpdatedDealer.teamOne;
+            findedRoom.teamTwo = UpdatedDealer.teamTwo
+            await this.client.json.set(roomId, '$', findedRoom);
+            setTimeout(async () => {
+                console.log('in after ask team or alo')
+                await checkIsPlayAloneTimeOut(findedRoom, roomId, AskTeamOrAloneId, this.io);
+                // let updatedRoom = await checkIsPlayAloneTimeOut(findedRoom, roomId, AskTeamOrAloneId, this.io);
+                // console.log('after ask team or alo timer Updated', updatedRoom)
+                // await this.client.json.set(findedRoom._id.toString(), '$', updatedRoom);
+                // findedRoom = updatedRoom
+
+            }, 31000); // 40 seconds timer
 
             // let next = {
             //     nextTurnId: isTurnData.userId,
@@ -263,10 +309,9 @@ class TrumpSelectionManager {
                 if (findedRoom.teamTwo[i].isTrumpShow) PrevTrumpshowUserId = findedRoom.teamTwo[i].UserId;
                 findedRoom.teamTwo[i].isTrumpShow = false;
             }
-            await this.client.set(roomId, JSON.stringify(findedRoom));
+            await this.client.json.set(roomId, '$', findedRoom);
             const updatedRoom = await checkIsBotTrumpSelectionForPlayAlone(findedRoom, roomId, PrevTrumpshowUserId, this.io)
-            const updateClient = await this.client.set(roomId, JSON.stringify(updatedRoom));
-            console.log('Update client status:', updateClient);
+            const updateClient = await this.client.json.set(roomId, '$', updatedRoom);
 
             if (updateClient !== 'OK') {
                 await PlayingRoom.findOneAndUpdate(
@@ -275,7 +320,6 @@ class TrumpSelectionManager {
                     { new: true }
                 );
             }
-            console.log('Emitted updates');
         }
     }
 }

@@ -8,6 +8,7 @@ const envVarsSchema = Joi.object()
 	.keys({
 		NODE_ENV: Joi.string().valid('production', 'development', 'test').required(),
 		PORT: Joi.number().default(3001),
+		RESET_REDIREACT_LINK : Joi.string().required().description('redirect link'),
 		FRONTEND_URL: Joi.string().uri().required().description('Mongo DB URL'),
 		MONGODB_URL: Joi.string().uri().required().description('Mongo DB URL'),
 		DESCOPEP_PROJECT_ID: Joi.string().required().description('Descope Project ID'),
@@ -39,6 +40,7 @@ module.exports = {
 	env: envVars.NODE_ENV,
 	port: envVars.PORT,
 	DESCOPEP_PROJECT_ID: envVars.DESCOPEP_PROJECT_ID,
+	RESET_REDIREACT_LINK :envVars.RESET_REDIREACT_LINK,
 	DESCOPE_MANAGEMENT_KEY: envVars.DESCOPE_MANAGEMENT_KEY,
 	FRONTEND_URL: envVars.FRONTEND_URL,
 	mongoose: {

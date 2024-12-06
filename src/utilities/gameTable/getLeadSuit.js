@@ -19,11 +19,13 @@ function getLeadSuit(leadCard) {
 	};
 
 	// Map through the input array and convert the card string into rank and suit
-	const cardDetails = getCardDetails(leadCard);
-	return {
-		rank: cardDetails.rank,
-		suit: cardDetails.suit
-	};
+	const cardDetails = leadCard ? getCardDetails(leadCard) : null;
+	if(cardDetails){
+		return {
+			rank: cardDetails.rank,
+			suit: cardDetails.suit
+		};
+	}
 }
 function getTrumpSuitFromSelectBTN(leadCard) {
 	// Helper to extract rank and suit from the card string

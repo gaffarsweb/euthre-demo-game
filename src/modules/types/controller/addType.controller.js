@@ -12,7 +12,7 @@ const addType = catchAsync(async (req, res) => {
         sendResponse(res,
             addResult?.code == 201 ? httpStatus.CREATED
                 : httpStatus.OK, addResult?.data, null
-        );
+        ); 
     } else {
         sendResponse(res,
             addResult?.code == 500 ? httpStatus.INTERNAL_SERVER_ERROR

@@ -18,7 +18,6 @@ const passTrumpBox = async (teamOne, teamTwo, count) => {
 			isShowTrumpBoxNewUser =	allPlayers[nextPlayerIndex].UserId;
 
 			if (allPlayers[i].isDealer) {
-				console.log('asdfasdfsdf', allPlayers[i])
 
 				trumpRound = count + 1;
 			}

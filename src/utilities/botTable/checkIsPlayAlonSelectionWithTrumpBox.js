@@ -4,7 +4,6 @@ const playWithPartner = require('./playWithPartnerForBot');
 
 
 const checkIsBotTrumpSelectionForPlayAlone = async (findedRoom, roomId, PrevTrumpshowUserId, io) => {
-    console.log('in chweck trump')
 
     if (findedRoom.teamOne[0].UserId === PrevTrumpshowUserId && findedRoom.teamOne[0].role === 'bot') {
 

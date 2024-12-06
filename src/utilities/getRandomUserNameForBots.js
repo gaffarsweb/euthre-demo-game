@@ -21,14 +21,24 @@ class BotNameGenerator {
             "LuckyLucifer",
             "BennyBluff",
             "RummyTommy",
-            "FlickerFred"
+            "FlickerFred",
+            "cleveland",
+            "wilson",
+            "taft",
+            "hayes",
+            "grant",
+            "tyler",
+            "buren",
+            "jackson",
+            "harrison",
+            "adams",
         ];
     }
 
     // Function to get a random bot name
     getRandomBotName() {
         // Generate a random number between 0 and 9
-        const randomIndex = Math.floor(Math.random() * 19);
+        const randomIndex = Math.floor(Math.random() * 30);
         // Return the bot name at the random index
         return this.botNames[randomIndex];
     }

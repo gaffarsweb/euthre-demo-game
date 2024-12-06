@@ -2,15 +2,22 @@ const UserModel = require('../user.model');
 const TokenServices = require('../../token/token.services')
 const bcrypt = require("bcryptjs")
 const bodyParser = require('body-parser');
-const config = require('../../../config/config')
+const config = require('../../../config/config');
+const Wallet = require('../../wallet/wallet.model');
+const { mongo } = require('mongoose');
+const { default: mongoose } = require('mongoose');
 // Correctly import the DescopeClient
 const DescopeClient = require('@descope/node-sdk').default;
 
 const login = async ({ body }) => {
     try {
-        let userExists = await UserModel.findOne({ email: body?.loginId, active: true })
+        let userExists = await UserModel.findOne({ email: body?.loginId })
 
-        let userExistsUserName = await UserModel.findOne({ userName: body?.loginId, active: true })
+        let userExistsUserName = await UserModel.findOne({ userName: body?.loginId})
+
+        if(userExists?.active === false || userExistsUserName?.active === false){
+            return { msg: "Account temporarily blocked, please contact admin", status: false, code: 400, data: null };
+        }
 
         if (userExists || userExistsUserName) {
 
@@ -31,10 +38,10 @@ const login = async ({ body }) => {
             const resp = await descopeClient.password.signIn(loginId, body.password);
             if (resp.ok) {
                 resp.data.user.userName = existtedUser.userName;
-                if(existtedUser?.isEmailVerified){
+                if (existtedUser?.isEmailVerified) {
                     return { data: resp, status: true, code: 200 }
-                }else if(!existtedUser?.isEmailVerified){
-                    return { msg: 'verify your email. A verification link has been sent to your email address.', status:false, code:401}
+                } else if (!existtedUser?.isEmailVerified) {
+                    return { msg: 'verify your email. A verification link has been sent to your email address.', status: false, code: 401 }
                 }
 
             } else {
@@ -86,8 +93,13 @@ const login = async ({ body }) => {
 
                         newResponse.data.user.userName = existtedUser.userName;
                         const newUser = await UserModel.findOneAndUpdate({ email: existtedUser?.email }, body);
+                        let updatedWallet = await Wallet.findOneAndUpdate(
+                            { userId: new mongoose.Types.ObjectId(newUser?._id) },
+                            { descopeId: body?.descopeId },
+                            { new: true }
+                        );
 
-                        if (newUser) {
+                        if (newUser && updatedWallet) {
                             return { data: newResponse, status: true, code: 200 }
                         } else {
                             return { msg: "Something went wrong, please try again.", status: false, code: 400 };

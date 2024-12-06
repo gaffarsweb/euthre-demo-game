@@ -21,7 +21,7 @@ const checkRoomStatus = async ({ user }) => {
                 ]);
                 if (findRoom.length > 0) {
                     const roomId = findRoom[0]._id.toString();
-                    let redisData = await client.get(roomId);
+                    let redisData = await client.json.get(roomId);
 
                     if (redisData.code === 500) {
                         return { status: false, code: 500, msg: redisData.msg }

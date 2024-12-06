@@ -11,7 +11,7 @@ const addPackage = async ({ user, body }) => {
         const result = await StoreModel.create({
             userId: user._id,
             type: body?.type,
-            price: body?.price,
+            prize: body?.prize,
             quantity: body?.quantity,
 
         });

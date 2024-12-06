@@ -3,6 +3,7 @@ const validator = require('validator');
 const bcrypt = require('bcryptjs');
 const { roles } = require('../../config/enums');
 // const counterIncrementor = require('../../utilities/counterIncrementor');
+const mongoosePaginate = require('mongoose-paginate-v2');
 
 const userSchema = new mongoose.Schema(
 	{
@@ -12,11 +13,15 @@ const userSchema = new mongoose.Schema(
 		},
 		referralCode: {
 			type: String,
-			default:""
+			default: "",
+			required: true
+		},
+		referredBy: {
+			type: mongoose.Schema.Types.ObjectId,
 		},
 		descopeId: {
 			type: String,
-			default:""
+			default: ""
 		},
 		email: {
 			type: String,
@@ -49,6 +54,22 @@ const userSchema = new mongoose.Schema(
 			enum: roles,
 			default: 'user'
 		},
+		level: {
+			type: Number,
+			default: 1
+		},
+		XP: {
+			type: Number,
+			default: 0
+		},
+		Won: {
+			type: Number,
+			default: 0
+		},
+		Lost: {
+			type: Number,
+			default: 0
+		},
 		seqId: {
 			type: Number
 		},
@@ -58,10 +79,10 @@ const userSchema = new mongoose.Schema(
 	}
 );
 
-userSchema.virtual('publicProfile').get(function() {
+userSchema.virtual('publicProfile').get(function () {
 	const { password, ...publicData } = this.toObject();
 	return publicData;
-  });
+});
 
 // Encrypt password before saving
 userSchema.pre('save', async function (next) {
@@ -76,7 +97,7 @@ userSchema.pre('save', async function (next) {
 	}
 	next();
 });
-
+userSchema.plugin(mongoosePaginate)
 const User = mongoose.model('User', userSchema);
 
 module.exports = User;

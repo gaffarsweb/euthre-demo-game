@@ -5,33 +5,34 @@ const { getTrumpSuitFromSelectBTN } = require("./getLeadSuit");
 const reciveTrumpSelectedCard = require("./reciveTrumpSelectedCard");
 const client = require("../redisClient");
 const checkIsBotDealer = require("./checkIsBotDealer");
-
-const  handleOrderUp = async (e) => {
-    console.log("Round 1")
+const checkIsDealerTimeOut = require("../timerTable/checkIsDealerTimeOut");
+const { addTimePlayersIsDealer } = require("../timerTable/addTimeInPlayers");
+const { getTimePlus30Seconds } = require("../timerTable/setTimer");
+const handleOrderUp = async (e) => {
+    console.log('handle order up from bot')
     let data = e;
     let action = 1;
 
     let { findedRoom, roomId, io, selectedCard } = data;
+    console.log('in handle orderUp', data)
     let selectedCardSuit = selectedCard;
     if (selectedCard.length >= 2) {
-        console.log('inn if leng condition')
         selectedCardSuit = getTrumpSuitFromSelectBTN(selectedCard)
     }
 
     if (typeof findedRoom === 'string') {
-        console.log('in string for bot')
         findedRoom = JSON.parse(findedRoom);
     }
 
     if (typeof findedRoom === 'string') {
         findedRoom = JSON.parse(findedRoom);
     }
-    // let findedRoom = await client.get(roomId);
-    console.log('passtrumpbox client', findedRoom);
-  
+    // let findedRoom = await client.json.get(roomId);
 
+    console.log('is reciveing ', findedRoom)
     const { teamOnes, teamTwos, dealerId } = await reciveTrumpSelectedCard(findedRoom.teamOne, findedRoom.teamTwo, selectedCard);
-    console.log('card recived')
+    console.log('is recived card teamone', teamOnes)
+    console.log('is recived card teamTwo', teamTwos)
     if (roomId) {
         let preTrupRound = 0;
         let { teamOne, teamTwo, trumpRound, userId } = await cehckTrumShow(
@@ -41,7 +42,6 @@ const  handleOrderUp = async (e) => {
         );
 
 
-        console.log('ged userid', userId)
         preTrupRound = findedRoom.trumpRound;
         findedRoom.teamOne = teamOne;
         findedRoom.teamTwo = teamTwo;
@@ -49,6 +49,7 @@ const  handleOrderUp = async (e) => {
         findedRoom.isTrumpSelected = true;
         findedRoom.trumpRound = 0;
         // findedRoom.isStarted = true;
+        findedRoom.trumpMaker = userId;
 
         const clients = io.sockets.adapter.rooms.get(roomId);
         console.log(clients ? 'Clients in room:' : 'No clients in the room', [...(clients || [])]);
@@ -63,16 +64,30 @@ const  handleOrderUp = async (e) => {
         io.to(roomId).emit('OrderPassCall', { OrderUpdate: orderPassCell });
         io.to(roomId).emit('roomUpdates', { roomData: findedRoom });
         io.to(roomId).emit('lastAction', { action, userId });
-        io.to(roomId).emit('NotifyDealerRemove', { roomData: dealerId });
+        const timeOut = await getTimePlus30Seconds();
+        io.to(roomId).emit('NotifyDealerRemove', { roomData: { dealerId, timeOut, timerCount: 27 } });
+
+        const UpdatedDealer = await addTimePlayersIsDealer(findedRoom.teamOne, findedRoom.teamTwo, dealerId, timeOut);
+        findedRoom.teamOne = UpdatedDealer.teamOne;
+        findedRoom.teamTwo = UpdatedDealer.teamTwo
         // let next = {
         //     nextTurnId: isTurnData.userId,
         //     isPlayingAlone: isTurnData.isPlayingAlone
         // }
         // io.to(roomId).emit('NextTurn', { roomData: next });
-         await client.set(roomId, JSON.stringify(findedRoom));
+
+        await client.json.set(roomId, '$', findedRoom);
+        setTimeout(async () => {
+            console.log('in dealer timer')
+            await checkIsDealerTimeOut(findedRoom, roomId, io);
+            // let updatedRoom = await checkIsDealerTimeOut(findedRoom, roomId, io);
+            console.log('dealer timer Updated')
+            // await this.client.json.set(findedRoom._id.toString(), JSON.stringify(updatedRoom));
+            // findedRoom = updatedRoom
+
+        }, 31000); // 40 seconds timer
         const updatedRom = await checkIsBotDealer(findedRoom, roomId, io);
-        const updateClient = await client.set(roomId, JSON.stringify(updatedRom));
-        console.log('Update client status:', updateClient);
+        const updateClient = await client.json.set(roomId, '$', updatedRom);
 
         if (updateClient !== 'OK') {
             await PlayingRoom.findOneAndUpdate(
@@ -81,7 +96,6 @@ const  handleOrderUp = async (e) => {
                 { new: true }
             );
         }
-        console.log('Emitted updates');
         return findedRoom
     }
 };

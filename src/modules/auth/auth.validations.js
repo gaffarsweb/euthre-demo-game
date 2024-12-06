@@ -6,6 +6,10 @@ const registerAdmin = {
 			"string.empty": `Username is required and cannot be empty.`,
 			"any.required": `Username is a mandatory field.`,
 		}),
+		referralCode: Joi.string().trim().required().messages({
+			"string.empty": `referralCode is required and cannot be empty.`,
+			"any.required": `referralCode is a mandatory field.`,
+		}),
 		email: Joi.string().trim().email().required().messages({
 			"string.empty": `Email is required and cannot be empty.`,
 			"any.required": `Email address is required.`,

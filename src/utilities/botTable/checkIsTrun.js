@@ -1,4 +1,4 @@
-const checkIsTurn = async (teamOne, teamTwo, count) => {
+const checkIsTurn = async (teamOne, teamTwo, count, timeOut) => {
     let userId;
     let isPlayingAlone = false
 
@@ -10,6 +10,7 @@ const checkIsTurn = async (teamOne, teamTwo, count) => {
         }
         if (allPlayers[i].isTurn) {
             userId = allPlayers[i].UserId;
+            allPlayers[i].timeOut = timeOut
         }
     };
 
@@ -19,8 +20,8 @@ const checkIsTurn = async (teamOne, teamTwo, count) => {
             allPlayers[i].isTurn = false;
             let addition = i + 1;
             allPlayers[addition].isTurn = true;
+            allPlayers[addition].timeOut = timeOut
             userId = allPlayers[addition].UserId;
-            console.log('parter played alone', allPlayers[i])
         }
     }
 

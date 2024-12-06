@@ -1,72 +1,72 @@
 // socket.on('joinedRoom', async (e) => {
-	// 	let data = e;
-	// 	console.log("joined ", e);
+// 	let data = e;
+// 	console.log("joined ", e);
 
-	// 	if (typeof e === 'string') {
-	// 		data = JSON.parse(e);
-	// 	}
+// 	if (typeof e === 'string') {
+// 		data = JSON.parse(e);
+// 	}
 
-	// 	if (data.roomId) {
-	// 		socket.join(data.roomId);
-	// 		const findedRoom = await PlayingRoom.findOne({ _id: new mongoose.Types.ObjectId(data.roomId) });
-	// 		if (findedRoom) {
-	// 			console.log('in findedrommm')
-	// 			if (findedRoom.status == 'shuffling' && !playingRoom.includes(findedRoom._id)) {
-	// 				//hash table
-	// 				playingRoom.push(findedRoom._id)
-	// 				await clearAllreadyDrawnCards()
-	// 				findedRoom.teamOne[0].isDealer = true;
-	// 				let teamOneUpdated;
-	// 				let teamTwoUpdated;
-	// 				teamOneUpdated = await Promise.all(findedRoom.teamOne.map(async (gamer, index) => {
-	// 					if (!gamer.cards || gamer.cards.length === 0) {
-	// 						const card = await shuffleCards(totalCard, 5);
-	// 						totalCard = totalCard.filter(tc => !card.includes(tc));
-	// 						if (index == 1) {
-	// 							return { ...gamer, cards: card, };
-	// 						} else {
-	// 							return { ...gamer, cards: card };
-	// 						}
-	// 					}
-	// 				}));
-	// 				teamTwoUpdated = await Promise.all(findedRoom.teamTwo.map(async (gamer, index) => {
+// 	if (data.roomId) {
+// 		socket.join(data.roomId);
+// 		const findedRoom = await PlayingRoom.findOne({ _id: new mongoose.Types.ObjectId(data.roomId) });
+// 		if (findedRoom) {
+// 			console.log('in findedrommm')
+// 			if (findedRoom.status == 'shuffling' && !playingRoom.includes(findedRoom._id)) {
+// 				//hash table
+// 				playingRoom.push(findedRoom._id)
+// 				await clearAllreadyDrawnCards()
+// 				findedRoom.teamOne[0].isDealer = true;
+// 				let teamOneUpdated;
+// 				let teamTwoUpdated;
+// 				teamOneUpdated = await Promise.all(findedRoom.teamOne.map(async (gamer, index) => {
+// 					if (!gamer.cards || gamer.cards.length === 0) {
+// 						const card = await shuffleCards(totalCard, 5);
+// 						totalCard = totalCard.filter(tc => !card.includes(tc));
+// 						if (index == 1) {
+// 							return { ...gamer, cards: card, };
+// 						} else {
+// 							return { ...gamer, cards: card };
+// 						}
+// 					}
+// 				}));
+// 				teamTwoUpdated = await Promise.all(findedRoom.teamTwo.map(async (gamer, index) => {
 
-	// 					if (!gamer.cards || gamer.cards.length === 0) {
-	// 						const card = await shuffleCards(totalCard, 5);
-	// 						totalCard = totalCard.filter(tc => !card.includes(tc));
-	// 						if (index == 0) {
-	// 							return { ...gamer, cards: card, isTurn: true, isTrumpShow: true };
-	// 						} else {
-	// 							return { ...gamer, cards: card };
-	// 						}
-	// 					}
-	// 				}));
-
-
-	// 				// Update the total cards after player cards have been dealt
-	// 				findedRoom.status = 'playing'
-	// 				findedRoom.totalCards = totalCard;
-	// 				// findedRoom.players = updatedPlayers;
-	// 				findedRoom.teamOne = await teamOneUpdated;
-	// 				findedRoom.teamTwo = await teamTwoUpdated;
-	// 				alreadyDrawnCards = [];
-	// 				await findedRoom.save();
-	// 				io.to(data.roomId).emit('roomUpdates', { roomData: findedRoom });
-	// 				await client.set(data.roomId, JSON.stringify(findedRoom));
-	// 				totalCard = ['9h', '10h', 'jh', 'qh', 'kh', 'ah', '9d', '10d', 'jd', 'qd', 'kd', 'ad', '9c', '10c', 'jc', 'qc', 'kc', 'ac', '9s', '10s', 'js', 'qs', 'ks', 'as'];
-	// 				// let index = playingRoom.indexOf(findedRoom._id);
-	// 				// if (index !== -1) {
-	// 				// 	playingRoom.splice(index, 1);
-	// 				// }
-	// 			} else {
-	// 				io.to(data.roomId).emit('roomUpdates', { roomData: findedRoom });
-	// 			}
+// 					if (!gamer.cards || gamer.cards.length === 0) {
+// 						const card = await shuffleCards(totalCard, 5);
+// 						totalCard = totalCard.filter(tc => !card.includes(tc));
+// 						if (index == 0) {
+// 							return { ...gamer, cards: card, isTurn: true, isTrumpShow: true };
+// 						} else {
+// 							return { ...gamer, cards: card };
+// 						}
+// 					}
+// 				}));
 
 
-	// 		}
-	// 	}
+// 				// Update the total cards after player cards have been dealt
+// 				findedRoom.status = 'playing'
+// 				findedRoom.totalCards = totalCard;
+// 				// findedRoom.players = updatedPlayers;
+// 				findedRoom.teamOne = await teamOneUpdated;
+// 				findedRoom.teamTwo = await teamTwoUpdated;
+// 				alreadyDrawnCards = [];
+// 				await findedRoom.save();
+// 				io.to(data.roomId).emit('roomUpdates', { roomData: findedRoom });
+// 				await client.json.set(data.roomId,'$' ,findedRoom);
+// 				totalCard = ['9h', '10h', 'jh', 'qh', 'kh', 'ah', '9d', '10d', 'jd', 'qd', 'kd', 'ad', '9c', '10c', 'jc', 'qc', 'kc', 'ac', '9s', '10s', 'js', 'qs', 'ks', 'as'];
+// 				// let index = playingRoom.indexOf(findedRoom._id);
+// 				// if (index !== -1) {
+// 				// 	playingRoom.splice(index, 1);
+// 				// }
+// 			} else {
+// 				io.to(data.roomId).emit('roomUpdates', { roomData: findedRoom });
+// 			}
 
-	// })
+
+// 		}
+// 	}
+
+// })
 
 
 //pass trum box
@@ -75,7 +75,7 @@ socket.on('passTrumpBox', async (e) => {
 	const roomId = e.roomId;
 
 	if (roomId) {
-		let findedRoom = await client.get(roomId);
+		let findedRoom = await client.json.get(roomId);
 		console.log('passtrumpbox client', findedRoom)
 		if (typeof findedRoom === 'string') {
 			findedRoom = JSON.parse(findedRoom);
@@ -91,7 +91,7 @@ socket.on('passTrumpBox', async (e) => {
 		if (trumpRound == 2) {
 			trumpRound = 0
 			const { teamOne, teamTwo } = await createDealer(findedRoom.teamOne, findedRoom.teamTwo,);
-			
+
 			findedRoom.trumpRound = trumpRound;
 			await clearAllreadyDrawnCards()
 
@@ -138,7 +138,7 @@ socket.on('passTrumpBox', async (e) => {
 		}
 
 		io.to(roomId).emit('roomUpdates', { roomData: findedRoom });
-		const updateClient = await client.set(roomId, JSON.stringify(findedRoom));
+		const updateClient = await client.json.set(roomId, '$', findedRoom);
 		console.log('asdf', updateClient)
 		if (updateClient != 'OK') {
 			const updatedRoom = await PlayingRoom.findOneAndUpdate(
@@ -157,7 +157,7 @@ socket.on('TrumpCardSuitSelected', async (e) => {
 	const roomId = e.roomId;
 	const selectedCard = e.card;
 	if (roomId) {
-		let findedRoom = await client.get(roomId);
+		let findedRoom = await client.json.get(roomId);
 		console.log('passtrumpbox client', findedRoom)
 		if (typeof findedRoom === 'string') {
 			findedRoom = JSON.parse(findedRoom);
@@ -179,7 +179,7 @@ socket.on('TrumpCardSuitSelected', async (e) => {
 		}
 
 		io.to(roomId).emit('roomUpdates', { roomData: findedRoom });
-		const updateClient = await client.set(roomId, JSON.stringify(findedRoom));
+		const updateClient = await client.json.set(roomId, '$', findedRoom);
 		console.log('asdf', updateClient)
 		if (updateClient != 'OK') {
 			const updatedRoom = await PlayingRoom.findOneAndUpdate(
@@ -196,7 +196,7 @@ socket.on('TrumpSelected', async (e) => {
 	const roomId = e.roomId;
 	const selectedCard = e.selectedCard;
 
-	let findedRoom = await client.get(roomId);
+	let findedRoom = await client.json.get(roomId);
 	console.log('passtrumpbox client', findedRoom)
 	if (typeof findedRoom === 'string') {
 		findedRoom = JSON.parse(findedRoom);
@@ -227,7 +227,7 @@ socket.on('TrumpSelected', async (e) => {
 		}
 
 		io.to(roomId).emit('roomUpdates', { roomData: findedRoom });
-		const updateClient = await client.set(roomId, JSON.stringify(findedRoom));
+		const updateClient = await client.json.set(roomId, '$', findedRoom);
 		console.log('asdf', updateClient)
 		if (updateClient != 'OK') {
 			const updatedRoom = await PlayingRoom.findOneAndUpdate(
@@ -244,7 +244,7 @@ socket.on('removeExtraCard', async (e) => {
 	const roomId = e.roomId;
 	const removedCardSelected = e.card;
 
-	let findedRoom = await client.get(roomId);
+	let findedRoom = await client.json.get(roomId);
 	console.log('passtrumpbox client', findedRoom)
 	if (typeof findedRoom === 'string') {
 		findedRoom = JSON.parse(findedRoom);
@@ -272,7 +272,7 @@ socket.on('removeExtraCard', async (e) => {
 		}
 
 		io.to(roomId).emit('roomUpdates', { roomData: findedRoom });
-		const updateClient = await client.set(roomId, JSON.stringify(findedRoom));
+		const updateClient = await client.json.set(roomId, '$', findedRoom);
 		console.log('asdf', updateClient)
 		if (updateClient != 'OK') {
 			const updatedRoom = await PlayingRoom.findOneAndUpdate(

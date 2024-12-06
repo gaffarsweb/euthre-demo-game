@@ -9,7 +9,7 @@ const storeSchema = new mongoose.Schema({
         type:  mongoose.Schema.Types.ObjectId,
         required: true
     },
-    price: {
+    prize: {
         type: Number,
         required: true
     },

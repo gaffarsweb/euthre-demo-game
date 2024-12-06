@@ -2,6 +2,11 @@ const mongoose = require('mongoose');
 const client = require('../redisClient');  // Adjust the path to your Redis client as needed
 const PlayingRoom = require('../../modules/playingroom/playingRoom.model');
 const checkIsTurn = require('./checkIsTrun');
+const { getTimePlus30Seconds } = require('../timerTable/setTimer');
+const checkIsTimeOutTurn = require('../timerTable/checkIsTimeOutTurn');
+const checkIsBotTurn = require('./checkisBotTurn');
+const { addTimePlayersIsTurn } = require('../timerTable/addTimeInPlayers');
+const checkIsLastCardThrow = require('../checkIslastCard');
 
 class PlayAloneHandler {
   constructor(io, socket) {
@@ -12,7 +17,6 @@ class PlayAloneHandler {
   }
 
   async handlePlayAlone(e) {
-    console.log('play alone called');
     let data = typeof e === 'string' ? JSON.parse(e) : e;
     data = typeof data === 'string' ? JSON.parse(data) : data;
     let playAlone = 1;
@@ -28,18 +32,23 @@ class PlayAloneHandler {
 
     if (findedRoom) {
       this.updateRoomState(findedRoom, userId);
-      console.log('updated findedroom for alone', findedRoom);
 
-      
+
       let NotifyAloneOrTeam = {
         userId,
-        playingStatus: playAlone
+        playingStatus: playAlone,
+        trumpSuit: findedRoom.trumpSuit
       }
-     
-      let isTurnData = await checkIsTurn(findedRoom.teamOne, findedRoom.teamTwo);
+
+      const timeOut = await getTimePlus30Seconds();
+      let isTurnData = await checkIsTurn(findedRoom.teamOne, findedRoom.teamTwo, 0, timeOut);
       let next = {
         nextTurnId: isTurnData.userId,
-        isPlayingAlone: isTurnData.isPlayingAlone
+        isPlayingAlone: isTurnData.isPlayingAlone,
+        timeOut, timerCount: 30,
+        leadSuit: findedRoom.playedCards.length > 0 && findedRoom.playedCards[0].card ? findedRoom.playedCards[0].card : '',
+        trumpSuit: findedRoom.trumpSuit
+
       };
       findedRoom.teamOne = isTurnData.teamOne
       findedRoom.teamTwo = isTurnData.teamTwo
@@ -47,7 +56,19 @@ class PlayAloneHandler {
       this.io.to(roomId).emit('NotifyAloneOrTeam', { roomData: NotifyAloneOrTeam });
       this.io.to(roomId).emit('lastAction', { action, userId });
       this.io.to(roomId).emit('NextTurn', { roomData: next });
-      const updateClient = await client.set(roomId, JSON.stringify(findedRoom));
+      const addedTimeOut = await addTimePlayersIsTurn(findedRoom.teamOne, findedRoom.teamTwo, isTurnData.userId, timeOut)
+      console.log('in addedTimeOut', addedTimeOut)
+      findedRoom.teamOne = addedTimeOut.teamOne;
+      findedRoom.teamTwo = addedTimeOut.teamTwo;
+      findedRoom = await checkIsBotTurn(findedRoom, this.io, roomId);
+      findedRoom = await checkIsLastCardThrow(findedRoom, this.io, roomId, isTurnData.userId);
+
+      const updateClient = await client.json.set(roomId, '$', findedRoom);
+
+      setTimeout(async () => {
+        console.log('in turn timeout function')
+        await checkIsTimeOutTurn(findedRoom, this.io, roomId, isTurnData.userId)
+      }, 31000); // 40 seconds timer
       if (updateClient !== 'OK') {
         await PlayingRoom.findOneAndUpdate(
           { _id: new mongoose.Types.ObjectId(roomId) },  // Filter condition
@@ -59,7 +80,7 @@ class PlayAloneHandler {
   }
 
   async getRoomData(roomId) {
-    let roomData = await client.get(roomId);
+    let roomData = await client.json.get(roomId);
     if (typeof roomData === 'string') {
       roomData = JSON.parse(roomData);
     }
